@@ -83,7 +83,7 @@ namespace RARPEditor.Controls
 
             ColID.ReadOnly = true;
 
-            // Fix: Explicitly set columns that use context menus for editing to be NOT ReadOnly.
+            // Explicitly set columns that use context menus for editing to be NOT ReadOnly.
             // This overrides any designer settings and allows cell-level ReadOnly state to be the source of truth.
             ColFlag.ReadOnly = false;
             ColLType.ReadOnly = false;
@@ -550,7 +550,7 @@ namespace RARPEditor.Controls
 
         private void ShowEditingMenuForCell(int columnIndex, int rowIndex)
         {
-            // Fix: Reverted to checking the cell's style, as the ReadOnly property was causing cascading issues.
+            // Reverted to checking the cell's style, as the ReadOnly property was causing cascading issues.
             // This correctly blocks interaction with visually disabled cells without breaking others.
             if (triggerGrid.Rows[rowIndex].Cells[columnIndex].Style.BackColor == SystemColors.ControlLight)
             {

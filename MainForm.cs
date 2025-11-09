@@ -896,7 +896,7 @@ namespace RARPEditor.Forms
                 }
             }
 
-            // Fix: Add a fallback to an empty string to ensure nodeKey is not null, resolving a warning.
+            // Add a fallback to an empty string to ensure nodeKey is not null, resolving a warning.
             string nodeKey = selectedNode.Parent?.Name ?? selectedNode.Name ?? "";
 
             switch (nodeKey)

@@ -65,7 +65,7 @@ namespace RARPEditor.Controls
             sb.AppendLine($@"\pard\sa200\sl276\slmult1\b\fs24 {text}\b0\fs22\par");
         }
 
-        // Fix: Ensure every line resets its color to default (\cf0) to prevent color bleed.
+        // Ensure every line resets its color to default (\cf0) to prevent color bleed.
         private void AppendLine(StringBuilder sb, string text, bool isBold = false, string bullet = "")
         {
             sb.Append(@"\pard\sa100\sl276\slmult1");
@@ -142,7 +142,7 @@ namespace RARPEditor.Controls
             }
         }
 
-        // Fix: Replace confusing terminology with clearer headers and add contextual subtext.
+        // Replace confusing terminology with clearer headers and add contextual subtext.
         // Replace the raw condition string with a helpful summary of logic and macros used.
         private void BuildDisplayStringHelp(StringBuilder sb, RichPresenceDisplayString displayString, RichPresenceScript script, List<ValidationResult> results)
         {
@@ -194,7 +194,7 @@ namespace RARPEditor.Controls
             }
         }
 
-        // Fix: Ensure every line resets its color to default (\cf0) to prevent color bleed from validation messages.
+        // Ensure every line resets its color to default (\cf0) to prevent color bleed from validation messages.
         private void RenderValidationResults(StringBuilder sb, List<ValidationResult> results)
         {
             if (results.Any())

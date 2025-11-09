@@ -189,7 +189,7 @@ namespace RARPEditor.Parsers
         {
             var sb = new System.Text.StringBuilder();
 
-            // Fix: Correctly separate lookups (with entries) from formatters (without entries).
+            // Correctly separate lookups (with entries) from formatters (without entries).
             var formatLookups = script.Lookups.Where(l => !l.Entries.Any() && l.Default == null).ToList();
             var standardLookups = script.Lookups.Except(formatLookups).ToList();
 
@@ -208,7 +208,7 @@ namespace RARPEditor.Parsers
                     {
                         sb.AppendLine($"// {group.Key}");
                     }
-                    // Fix: Order the entries within each group by their key value for consistent serialization.
+                    // Order the entries within each group by their key value for consistent serialization.
                     foreach (var entry in group.OrderBy(e => e.KeyValue))
                     {
                         sb.AppendLine($"{entry.KeyString}={entry.Value}");

@@ -9,7 +9,7 @@ namespace RARPEditor.Controls
         private RichPresenceScript? _currentScript;
         private Action? _dataChangedAction;
         private bool _isProgrammaticallyChanging;
-        // Fix: Store the original name to prevent creating undo states when no changes are made.
+        // Store the original name to prevent creating undo states when no changes are made.
         private string _originalName = "";
 
         private static readonly string[] FormatTypes = {
@@ -49,7 +49,7 @@ namespace RARPEditor.Controls
             _isProgrammaticallyChanging = true;
 
             nameTextBox.Text = _currentFormatter.Name;
-            // Fix: Store the name when the control is loaded.
+            // Store the name when the control is loaded.
             _originalName = _currentFormatter.Name;
 
             int formatIndex = Array.IndexOf(FormatTypes, _currentFormatter.Format.ToUpper());
@@ -75,7 +75,7 @@ namespace RARPEditor.Controls
             // The expensive data changed action is no longer called on every keystroke.
         }
 
-        // Fix: Create a single, atomic undo action when editing is complete.
+        // Create a single, atomic undo action when editing is complete.
         private void nameTextBox_Leave(object sender, EventArgs e)
         {
             // Only trigger the data changed action if the text has actually changed.

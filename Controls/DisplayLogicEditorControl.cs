@@ -46,7 +46,7 @@ namespace RARPEditor.Controls
 
         public void LoadDisplayString(RichPresenceDisplayString displayString, RichPresenceScript script, Action dataChangedAction)
         {
-            // Fix: Store the currently selected value group tab index to restore it after reload.
+            // Store the currently selected value group tab index to restore it after reload.
             int selectedValueGroupIndex = valueGroupTabControl.SelectedIndex;
 
             _currentDisplayString = displayString;
@@ -63,7 +63,7 @@ namespace RARPEditor.Controls
             UpdateLogicSelector();
             LoadSelectedLogic();
 
-            // Fix: Restore the selected tab index if it was stored and is still valid.
+            // Restore the selected tab index if it was stored and is still valid.
             if (selectedValueGroupIndex >= 0 && selectedValueGroupIndex < valueGroupTabControl.TabCount)
             {
                 valueGroupTabControl.SelectedIndex = selectedValueGroupIndex;

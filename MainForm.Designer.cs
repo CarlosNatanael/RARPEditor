@@ -150,7 +150,7 @@ namespace RARPEditor.Forms
             this.editToolStripMenuItem.Name = "editToolStripMenuItem";
             this.editToolStripMenuItem.Size = new System.Drawing.Size(39, 20);
             this.editToolStripMenuItem.Text = "&Edit";
-            // Fix: Add event handler to ensure textbox changes are committed before the menu is shown.
+            // Add event handler to ensure textbox changes are committed before the menu is shown.
             this.editToolStripMenuItem.DropDownOpening += new System.EventHandler(this.editToolStripMenuItem_DropDownOpening);
             // 
             // undoToolStripMenuItem

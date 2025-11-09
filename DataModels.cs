@@ -27,7 +27,7 @@ namespace RARPEditor.Models
         public Operand RightOperand { get; set; } = new Operand();
         public uint RequiredHits { get; set; }
 
-        // Fix: Ensure the clone method creates new Operand instances for a true deep copy.
+        // Ensure the clone method creates new Operand instances for a true deep copy.
         // Add a clone method for deep copying the condition and its operands.
         public AchievementCondition Clone()
         {

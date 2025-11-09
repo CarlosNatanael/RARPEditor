@@ -161,7 +161,7 @@ namespace RARPEditor.Models
                     }
                     else
                     {
-                        // Fix: Revert to using curly braces for display.
+                        // Revert to using curly braces for display.
                         sb.Append($"{{{part.Text}}}");
                     }
                 }

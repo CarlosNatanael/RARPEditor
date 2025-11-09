@@ -9,7 +9,7 @@
             this.DoubleBuffered = true;
         }
 
-        // Fix: Override ProcessCmdKey to handle standard editing shortcuts (Copy, Paste, Cut)
+        // Override ProcessCmdKey to handle standard editing shortcuts (Copy, Paste, Cut)
         // when a cell is in edit mode. This ensures that the shortcuts are passed to the
         // underlying TextBox editor and prevents them from being intercepted by the grid's
         // own logic (e.g., for pasting entire rows).

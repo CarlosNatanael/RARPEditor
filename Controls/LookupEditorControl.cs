@@ -17,8 +17,8 @@ namespace RARPEditor.Controls
         private string _originalName = "";
         private string _originalDefault = "";
         private readonly List<Category> _categories = new List<Category>();
+        private string? _originalValueOnEdit;
 
-        // Fix: Make the event nullable to resolve CS8618 warning.
         public event EventHandler<string>? StatusUpdateRequested;
 
         private class Category
@@ -32,6 +32,7 @@ namespace RARPEditor.Controls
             InitializeComponent();
             entriesDataGridView.EditingControlShowing += entriesDataGridView_EditingControlShowing;
             entriesDataGridView.CellEndEdit += entriesDataGridView_CellEndEdit;
+            entriesDataGridView.CellBeginEdit += entriesDataGridView_CellBeginEdit;
         }
 
         public void LoadLookup(RichPresenceLookup lookup, RichPresenceScript script, Action dataChangedAction)
@@ -59,7 +60,7 @@ namespace RARPEditor.Controls
             if (_currentScript == null || _currentLookup == null) return;
 
             var errors = ScriptValidator.Validate(_currentLookup, _currentScript);
-            nameTextBox.BackColor = errors.Any() ? Color.LightCoral : SystemColors.Window;
+            nameTextBox.BackColor = errors.Any(e => e.Type == ValidationType.Error) ? Color.LightCoral : SystemColors.Window;
         }
 
 
@@ -207,51 +208,22 @@ namespace RARPEditor.Controls
             }
         }
 
+        private void entriesDataGridView_CellBeginEdit(object? sender, DataGridViewCellCancelEventArgs e)
+        {
+            _originalValueOnEdit = entriesDataGridView.Rows[e.RowIndex].Cells[e.ColumnIndex].Value?.ToString();
+        }
+
         private void entriesDataGridView_CellValueChanged(object? sender, DataGridViewCellEventArgs e)
         {
             var grid = sender as DataGridView;
-            if (_isProgrammaticallyChanging || _currentLookup == null || grid == null || e.RowIndex < 0 || grid.IsCurrentCellInEditMode) return;
+            if (_isProgrammaticallyChanging || _currentLookup == null || grid == null || e.RowIndex < 0) return;
 
             var row = grid.Rows[e.RowIndex];
             if (row.IsNewRow || row.Tag is not LookupEntry entry) return;
 
             if (e.ColumnIndex == 0) // Key column
             {
-                var newKeyStr = row.Cells[0].Value?.ToString() ?? "";
-                if (RichPresenceParser.ParseKeyString(newKeyStr, out uint newStart, out uint? newEnd))
-                {
-                    bool isOverlapping = false;
-                    foreach (var otherEntry in _currentLookup.Entries.Where(en => en != entry))
-                    {
-                        uint otherStart = otherEntry.KeyValue;
-                        uint otherEnd = otherEntry.KeyValueEnd ?? otherEntry.KeyValue;
-                        uint currentStart = newStart;
-                        uint currentEnd = newEnd ?? newStart;
-
-                        if (currentStart <= otherEnd && currentEnd >= otherStart)
-                        {
-                            isOverlapping = true;
-                            break;
-                        }
-                    }
-
-                    if (isOverlapping)
-                    {
-                        MessageBox.Show($"The key or range '{newKeyStr}' overlaps with an existing entry.", "Overlapping Key", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        row.Cells[0].Value = entry.KeyString; // Revert
-                    }
-                    else
-                    {
-                        entry.KeyString = newKeyStr;
-                        entry.KeyValue = newStart;
-                        entry.KeyValueEnd = newEnd;
-                    }
-                }
-                else
-                {
-                    MessageBox.Show($"Invalid key format: '{newKeyStr}'. Please use a number, hex value, or a valid range (e.g., 0-9).", "Invalid Key", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    row.Cells[0].Value = entry.KeyString; // Revert
-                }
+                entry.KeyString = row.Cells[0].Value?.ToString() ?? "";
             }
             else if (e.ColumnIndex == 1) // Value column
             {
@@ -262,6 +234,28 @@ namespace RARPEditor.Controls
 
         private void entriesDataGridView_CellEndEdit(object? sender, DataGridViewCellEventArgs e)
         {
+            var grid = sender as DataGridView;
+            if (_isProgrammaticallyChanging || _currentLookup == null || grid == null || e.RowIndex < 0) return;
+
+            var row = grid.Rows[e.RowIndex];
+            if (row.IsNewRow || row.Tag is not LookupEntry entry) return;
+
+            if (e.ColumnIndex == 0) // Key column
+            {
+                var newKeyStr = entry.KeyString;
+                // Overlap check is removed; validation now only checks for valid format.
+                if (RichPresenceParser.ParseKeyString(newKeyStr, out uint newStart, out uint? newEnd))
+                {
+                    entry.KeyValue = newStart;
+                    entry.KeyValueEnd = newEnd;
+                }
+                else
+                {
+                    MessageBox.Show($"Invalid key format: '{newKeyStr}'. Please use a number, hex value, or a valid range (e.g., 0-9).", "Invalid Key", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    row.Cells[0].Value = _originalValueOnEdit;
+                    entry.KeyString = _originalValueOnEdit ?? "";
+                }
+            }
             _dataChangedAction?.Invoke();
         }
 
@@ -381,37 +375,17 @@ namespace RARPEditor.Controls
                 }
 
                 var keyStr = parts[0].Trim();
+                // Overlap check is removed. Entries are now added as long as the key format is valid.
                 if (RichPresenceParser.ParseKeyString(keyStr, out uint newStart, out uint? newEnd))
                 {
-                    bool isOverlapping = false;
-                    uint currentEnd = newEnd ?? newStart;
-                    // Check against entries already in the lookup AND entries we just added in this paste operation.
-                    foreach (var existingEntry in _currentLookup.Entries.Concat(addedEntries))
+                    addedEntries.Add(new LookupEntry
                     {
-                        uint otherStart = existingEntry.KeyValue;
-                        uint otherEnd = existingEntry.KeyValueEnd ?? existingEntry.KeyValue;
-                        if (newStart <= otherEnd && currentEnd >= otherStart)
-                        {
-                            isOverlapping = true;
-                            break;
-                        }
-                    }
-
-                    if (isOverlapping)
-                    {
-                        failedLines.Add(line);
-                    }
-                    else
-                    {
-                        addedEntries.Add(new LookupEntry
-                        {
-                            KeyString = keyStr,
-                            KeyValue = newStart,
-                            KeyValueEnd = newEnd,
-                            Value = parts[1].Trim(),
-                            Comment = category.Name == "(Uncategorized)" ? null : category.Name
-                        });
-                    }
+                        KeyString = keyStr,
+                        KeyValue = newStart,
+                        KeyValueEnd = newEnd,
+                        Value = parts[1].Trim(),
+                        Comment = category.Name == "(Uncategorized)" ? null : category.Name
+                    });
                 }
                 else
                 {
@@ -431,7 +405,8 @@ namespace RARPEditor.Controls
             if (failedLines.Any())
             {
                 var sb = new StringBuilder();
-                sb.AppendLine($"{failedLines.Count} line(s) could not be pasted due to invalid format or overlapping keys:");
+                // Updated the error message to remove mention of overlapping keys.
+                sb.AppendLine($"{failedLines.Count} line(s) could not be pasted due to an invalid format:");
                 sb.AppendLine();
                 foreach (var failedLine in failedLines.Take(5)) // Show first 5 failures
                 {
@@ -663,10 +638,7 @@ namespace RARPEditor.Controls
             }
             RebuildLookupEntriesFromCategories();
 
-            foreach (var row in rowsToRemove)
-            {
-                entriesDataGridView.Rows.Remove(row);
-            }
+            RefreshGrid(entriesDataGridView, category);
 
             if (entriesDataGridView.Rows.Count > 0)
             {
@@ -696,7 +668,6 @@ namespace RARPEditor.Controls
 
                 var newEntry = originalEntry.Clone();
 
-                // Find the next available key. This is critical to avoid overlaps.
                 uint nextKey = (originalEntry.KeyValueEnd ?? originalEntry.KeyValue) + 1;
                 while (allKeys.Contains(nextKey))
                 {
@@ -705,7 +676,17 @@ namespace RARPEditor.Controls
 
                 newEntry.KeyValue = nextKey;
                 newEntry.KeyValueEnd = null; // Duplicates are always single values for simplicity
-                newEntry.KeyString = nextKey.ToString();
+
+                // Preserve the original key format (Hex or Decimal) when creating the new key string.
+                if (originalEntry.KeyString.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                {
+                    newEntry.KeyString = "0x" + nextKey.ToString("x");
+                }
+                else
+                {
+                    newEntry.KeyString = nextKey.ToString();
+                }
+
 
                 category.Entries.Insert(insertionIndex++, newEntry);
                 allKeys.Add(nextKey);

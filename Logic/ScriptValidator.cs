@@ -45,6 +45,51 @@ namespace RARPEditor.Logic
                 results.Add(new ValidationResult { Type = ValidationType.Warning, Message = $"Potential issue: Another lookup/formatter exists with a similar name but different casing: {collisionNames}. Macro names are case-sensitive." });
             }
 
+            var entries = lookup.Entries;
+            for (int i = 0; i < entries.Count; i++)
+            {
+                var entryA = entries[i];
+                uint startA = entryA.KeyValue;
+                uint endA = entryA.KeyValueEnd ?? startA;
+
+                for (int j = i + 1; j < entries.Count; j++)
+                {
+                    var entryB = entries[j];
+                    uint startB = entryB.KeyValue;
+                    uint endB = entryB.KeyValueEnd ?? startB;
+
+                    if (startA <= endB && endA >= startB)
+                    {
+                        results.Add(new ValidationResult
+                        {
+                            Type = ValidationType.Warning,
+                            Message = $"Key '{entryA.KeyString}' overlaps with key '{entryB.KeyString}'. The first entry in the list will take precedence."
+                        });
+                    }
+                }
+            }
+
+            // Add validation to check for duplicate formatter types.
+            bool isFormatter = !lookup.Entries.Any() && lookup.Default == null;
+            if (isFormatter)
+            {
+                var duplicateFormatters = script.Lookups
+                    .Where(l => l != lookup &&
+                                !l.Entries.Any() && l.Default == null &&
+                                l.Format.Equals(lookup.Format, System.StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                if (duplicateFormatters.Any())
+                {
+                    string formatterNames = string.Join(", ", duplicateFormatters.Select(f => $"'{f.Name}'"));
+                    results.Add(new ValidationResult
+                    {
+                        Type = ValidationType.Warning,
+                        Message = $"The format type '{lookup.Format}' is already used by another formatter: {formatterNames}. This may be redundant."
+                    });
+                }
+            }
+
             return results;
         }
 
@@ -258,7 +303,6 @@ namespace RARPEditor.Logic
             }
         }
 
-        // Fix: Logic rewritten to correctly identify calculation endpoints, ignoring intermediate arithmetic steps.
         private static void ValidateMeasuredFlagRequirement(List<AchievementCondition> conditions, List<ValidationResult> results, RichPresenceDisplayPart part, string groupIdentifier)
         {
             // A "singleton" is a condition without a comparison operator, which means it produces a value.

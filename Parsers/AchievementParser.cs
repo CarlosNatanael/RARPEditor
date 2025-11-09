@@ -201,7 +201,7 @@ namespace RARPEditor.Parsers
             else if (current.TrimStart().StartsWith("0x", StringComparison.OrdinalIgnoreCase))
             {
                 if (string.IsNullOrEmpty(operand.Type)) operand.Type = "Mem";
-                // Fix: Trim whitespace immediately after stripping "0x" to handle cases like "0x 1234"
+                // Trim whitespace immediately after stripping "0x" to handle cases like "0x 1234"
                 string addressPart = current.TrimStart().Substring(2).TrimStart();
                 char sizeChar = ' '; // Default to 16-bit
                 if (addressPart.Length > 0 && char.IsLetter(addressPart[0]) && SizeMap.ContainsKey(char.ToUpper(addressPart[0])))

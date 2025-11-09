@@ -19,7 +19,7 @@ namespace RARPEditor.Controls
 
         // Simulation state variables
         private long _simulatedTimeValue = 0;
-        // Fix: Added a dedicated simulation value for score-type formatters.
+        // Added a dedicated simulation value for score-type formatters.
         private long _simulatedScoreValue = 0;
         private readonly Dictionary<string, uint> _simulatedLookupValues = new Dictionary<string, uint>();
         private readonly Dictionary<string, (long current, long max)> _progressValues = new Dictionary<string, (long, long)>();
@@ -60,7 +60,7 @@ namespace RARPEditor.Controls
         private void ResetSimulation()
         {
             _simulatedTimeValue = 0;
-            // Fix: Initialize the score to a random starting value for a more dynamic feel.
+            // Initialize the score to a random starting value for a more dynamic feel.
             _simulatedScoreValue = _random.Next(0, 10000);
             _simulatedLookupValues.Clear();
             _progressValues.Clear();
@@ -71,7 +71,7 @@ namespace RARPEditor.Controls
         {
             _simulatedTimeValue++;
 
-            // Fix: Update the simulated score with a "random walk" to make it feel more dynamic.
+            // Update the simulated score with a "random walk" to make it feel more dynamic.
             _simulatedScoreValue += _random.Next(-50, 51);
             if (_simulatedScoreValue < 0) _simulatedScoreValue = 0;
 
@@ -275,7 +275,7 @@ namespace RARPEditor.Controls
                 }
             }
 
-            // Fix: Use the dedicated simulated score value for the SCORE format type.
+            // Use the dedicated simulated score value for the SCORE format type.
             return format.ToUpper() switch
             {
                 "SCORE" => _simulatedScoreValue.ToString("D6"),

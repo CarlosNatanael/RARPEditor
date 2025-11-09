@@ -1,4 +1,4 @@
-﻿// Fix: Add using directive for the new InputForm.
+﻿// Add using directive for the new InputForm.
 using RARPEditor.Forms;
 
 namespace RARPEditor.Forms
@@ -45,7 +45,7 @@ namespace RARPEditor.Forms
 
             string oldName = CategoryOrder[selectedIndex];
 
-            // Fix: Use the new, consistent InputForm instead of the VB InputBox.
+            // Use the new, consistent InputForm instead of the VB InputBox.
             using var form = new InputForm("Rename Category", "Enter new category name:", oldName);
             if (form.ShowDialog() == DialogResult.OK)
             {
