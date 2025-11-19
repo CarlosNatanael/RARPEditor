@@ -126,3 +126,4 @@ namespace RARPEditor.Controls
         private ComboBox lookupSelectorComboBox;
     }
 }
+#nullable restore

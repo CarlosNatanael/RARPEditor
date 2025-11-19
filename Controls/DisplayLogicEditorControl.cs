@@ -27,9 +27,9 @@ namespace RARPEditor.Controls
         private string _originalMasterTemplate = "";
 
         private readonly TriggerEditorControl _conditionEditor;
+        // Pool used for Macro Value Groups
         private readonly List<TriggerEditorControl> _triggerEditorPool = new();
-
-        private readonly List<AchievementConditionGroup> _currentMacroValueGroups = new();
+        private readonly List<AchievementConditionGroup> _activeMacroGroups = new();
 
         private static readonly Regex MacroRegex = new(@"@([_a-zA-Z0-9]+)\(([^)]*)\)", RegexOptions.Compiled);
 
@@ -39,15 +39,19 @@ namespace RARPEditor.Controls
         public DisplayLogicEditorControl()
         {
             InitializeComponent();
-            _conditionEditor = new TriggerEditorControl { Dock = DockStyle.Fill };
+
+            // Initialize main condition editor
+            _conditionEditor = new TriggerEditorControl { Dock = DockStyle.Fill, Visible = false };
             _conditionEditor.TriggerTextChanged += ConditionEditor_TriggerTextChanged;
             _conditionEditor.StatusUpdateRequested += (s, msg) => StatusUpdateRequested?.Invoke(this, msg);
+
+            // Add to layout (row 2 is the flexible content area)
+            logicEditorTableLayoutPanel.Controls.Add(_conditionEditor, 0, 2);
         }
 
         public void LoadDisplayString(RichPresenceDisplayString displayString, RichPresenceScript script, Action dataChangedAction)
         {
-            // Store the currently selected value group tab index to restore it after reload.
-            int selectedValueGroupIndex = valueGroupTabControl.SelectedIndex;
+            int selectedGroupIndex = valueGroupTabControl.SelectedIndex;
 
             _currentDisplayString = displayString;
             _currentScript = script;
@@ -63,10 +67,9 @@ namespace RARPEditor.Controls
             UpdateLogicSelector();
             LoadSelectedLogic();
 
-            // Restore the selected tab index if it was stored and is still valid.
-            if (selectedValueGroupIndex >= 0 && selectedValueGroupIndex < valueGroupTabControl.TabCount)
+            if (selectedGroupIndex >= 0 && selectedGroupIndex < valueGroupTabControl.TabCount)
             {
-                valueGroupTabControl.SelectedIndex = selectedValueGroupIndex;
+                valueGroupTabControl.SelectedIndex = selectedGroupIndex;
             }
 
             _isProgrammaticallyChanging = false;
@@ -74,7 +77,7 @@ namespace RARPEditor.Controls
 
         private void ConditionEditor_TriggerTextChanged(object? sender, EventArgs e)
         {
-            if (_currentDisplayString != null && logicSelectorComboBox.SelectedItem?.ToString() == "Condition")
+            if (_currentDisplayString != null && logicSelectorComboBox.SelectedItem?.ToString() == "Condition" && !_isProgrammaticallyChanging)
             {
                 _currentDisplayString.Condition = _conditionEditor.TriggerText;
                 _dataChangedAction?.Invoke();
@@ -96,20 +99,15 @@ namespace RARPEditor.Controls
 
         private void RecycleAllMacroEditors()
         {
-            // Also recycle the main condition editor if it's in a tab
-            if (_conditionEditor.Parent != null)
-            {
-                _conditionEditor.Parent.Controls.Remove(_conditionEditor);
-            }
-
             foreach (var tab in valueGroupTabControl.TabPages.Cast<TabPage>())
             {
-                if (tab.Controls.Count > 0 && tab.Controls[0] is TriggerEditorControl editor && editor != _conditionEditor)
+                if (tab.Controls.Count > 0 && tab.Controls[0] is TriggerEditorControl editor)
                 {
                     _triggerEditorPool.Add(editor);
                     tab.Controls.Clear();
                 }
             }
+            valueGroupTabControl.TabPages.Clear();
         }
 
         private string ReconstructMasterTemplate()
@@ -252,60 +250,72 @@ namespace RARPEditor.Controls
         private void LoadSelectedLogic()
         {
             _isProgrammaticallyChanging = true;
-            RecycleAllMacroEditors();
-            valueGroupTabControl.TabPages.Clear();
-            _currentMacroValueGroups.Clear();
 
             var selectedItem = logicSelectorComboBox.SelectedItem?.ToString();
 
-            if (selectedItem == "Condition" || _currentDisplayString?.IsDefault == true)
+            // Mode switching: Condition (Single Editor) vs Macro (Tabbed Value Groups)
+            if (selectedItem == "Condition")
             {
+                // Hide Macro UI
+                valueGroupTabControl.Visible = false;
                 valueGroupToolStrip.Visible = false;
-                _conditionEditor.Enabled = _currentDisplayString?.IsDefault == false;
-                _conditionEditor.GroupBoxText = "Display Condition";
-                _conditionEditor.GroupSeparator = 'S';
-                _conditionEditor.TriggerText = _currentDisplayString?.Condition ?? "";
+                RecycleAllMacroEditors();
 
-                var page = new TabPage("Core Logic");
-                page.Controls.Add(_conditionEditor);
-                valueGroupTabControl.TabPages.Add(page);
+                if (_currentDisplayString?.IsDefault == true)
+                {
+                    _conditionEditor.Visible = false;
+                }
+                else
+                {
+                    _conditionEditor.Visible = true;
+                    _conditionEditor.Enabled = true;
+                    _conditionEditor.GroupBoxText = "Display Condition";
+                    _conditionEditor.GroupSeparator = 'S';
+                    _conditionEditor.TriggerText = _currentDisplayString?.Condition ?? "";
+                }
             }
             else if (selectedItem != null && _currentDisplayString != null)
             {
+                // Hide Condition UI
+                _conditionEditor.Visible = false;
+
+                // Show Macro UI
                 valueGroupToolStrip.Visible = true;
+                valueGroupTabControl.Visible = true;
+                RecycleAllMacroEditors();
+                _activeMacroGroups.Clear();
+
                 var macroPart = _currentDisplayString.Parts.FirstOrDefault(p => p.IsMacro && string.Equals(p.Text, selectedItem, StringComparison.OrdinalIgnoreCase));
                 if (macroPart != null)
                 {
-                    _currentMacroValueGroups.AddRange(AchievementParser.ParseAchievementTrigger(macroPart.Parameter, '$'));
-                    if (!_currentMacroValueGroups.Any())
+                    _activeMacroGroups.AddRange(AchievementParser.ParseAchievementTrigger(macroPart.Parameter, '$'));
+                    if (!_activeMacroGroups.Any())
                     {
-                        _currentMacroValueGroups.Add(new AchievementConditionGroup { GroupName = "Value Group 1" });
+                        _activeMacroGroups.Add(new AchievementConditionGroup { GroupName = "Value Group 1" });
                     }
-                    PopulateValueGroupTabs();
+                    PopulateMacroTabs();
                 }
             }
 
             _isProgrammaticallyChanging = false;
         }
 
-        private void PopulateValueGroupTabs()
+        private void PopulateMacroTabs()
         {
-            valueGroupTabControl.TabPages.Clear();
-            for (int i = 0; i < _currentMacroValueGroups.Count; i++)
+            for (int i = 0; i < _activeMacroGroups.Count; i++)
             {
-                var group = _currentMacroValueGroups[i];
+                var group = _activeMacroGroups[i];
                 var page = new TabPage($"Value Group {i + 1}") { Tag = i };
                 var editor = GetOrCreateTriggerEditor();
 
                 editor.GroupSeparator = '$';
-                var groupText = string.Join("_", group.Conditions.Select(TriggerEditorControl.ConditionToString));
-                editor.TriggerText = groupText;
+                editor.TriggerText = string.Join("_", group.Conditions.Select(TriggerEditorControl.ConditionToString));
                 editor.GroupBoxText = $"Logic for Value Group {i + 1}";
 
                 var field = typeof(TriggerEditorControl).GetField("TriggerTextChanged", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
                 if (field != null) field.SetValue(editor, null);
 
-                editor.TriggerTextChanged += (s, e) => RebuildMacroParameter();
+                editor.TriggerTextChanged += (s, e) => SaveMacroLogic();
 
                 page.Controls.Add(editor);
                 valueGroupTabControl.TabPages.Add(page);
@@ -313,7 +323,7 @@ namespace RARPEditor.Controls
             removeGroupButton.Enabled = valueGroupTabControl.TabPages.Count > 1;
         }
 
-        private void RebuildMacroParameter()
+        private void SaveMacroLogic()
         {
             if (_isProgrammaticallyChanging) return;
             var macroName = logicSelectorComboBox.SelectedItem?.ToString();
@@ -337,10 +347,10 @@ namespace RARPEditor.Controls
 
         private void addGroupButton_Click(object sender, EventArgs e)
         {
-            _currentMacroValueGroups.Add(new AchievementConditionGroup());
-            PopulateValueGroupTabs();
+            _activeMacroGroups.Add(new AchievementConditionGroup());
+            PopulateMacroTabs();
             valueGroupTabControl.SelectedIndex = valueGroupTabControl.TabCount - 1;
-            RebuildMacroParameter();
+            SaveMacroLogic();
         }
 
         private void removeGroupButton_Click(object sender, EventArgs e)
@@ -348,10 +358,10 @@ namespace RARPEditor.Controls
             if (valueGroupTabControl.SelectedIndex < 0) return;
             int index = valueGroupTabControl.SelectedIndex;
 
-            _currentMacroValueGroups.RemoveAt(index);
-            PopulateValueGroupTabs();
+            _activeMacroGroups.RemoveAt(index);
+            PopulateMacroTabs();
             valueGroupTabControl.SelectedIndex = Math.Min(index, valueGroupTabControl.TabCount - 1);
-            RebuildMacroParameter();
+            SaveMacroLogic();
         }
 
         private void macroContextMenu_Opening(object sender, System.ComponentModel.CancelEventArgs e)
@@ -404,8 +414,19 @@ namespace RARPEditor.Controls
             if (form.ShowDialog() == DialogResult.OK)
             {
                 NewMacroRequested?.Invoke(this, new NewMacroEventArgs(form.MacroName, form.MacroType));
+
+                // Insert text, triggering logic updates.
+                // This fires TextChanged event synchronously.
                 masterDisplayTextBox.SelectedText = $"{{{form.MacroName}}}";
+
+                // After insertion (and text processing), automatically select the new macro in the dropdown
+                // so the user can immediately start editing its logic.
+                if (logicSelectorComboBox.Items.Contains(form.MacroName))
+                {
+                    logicSelectorComboBox.SelectedItem = form.MacroName;
+                }
             }
         }
     }
 }
+#nullable restore

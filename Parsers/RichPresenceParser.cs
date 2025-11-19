@@ -108,19 +108,28 @@ namespace RARPEditor.Parsers
                                 }
                                 else
                                 {
-                                    string keyString = parts[0].Trim();
+                                    string combinedKeyString = parts[0].Trim();
                                     string valueString = parts[1].Trim();
 
-                                    if (ParseKeyString(keyString, out uint start, out uint? end))
+                                    // Handle comma-separated keys for the same value (e.g., "0x1,0x2=Value").
+                                    // This ensures that Lookups using this syntax are parsed as Lookups (with entries)
+                                    // rather than falling back to being classified as Formatters.
+                                    var keys = combinedKeyString.Split(',');
+
+                                    foreach (var rawKey in keys)
                                     {
-                                        currentLookup.Entries.Add(new LookupEntry
+                                        string keyString = rawKey.Trim();
+                                        if (ParseKeyString(keyString, out uint start, out uint? end))
                                         {
-                                            KeyString = keyString,
-                                            Value = valueString,
-                                            Comment = currentComment,
-                                            KeyValue = start,
-                                            KeyValueEnd = end
-                                        });
+                                            currentLookup.Entries.Add(new LookupEntry
+                                            {
+                                                KeyString = keyString,
+                                                Value = valueString,
+                                                Comment = currentComment,
+                                                KeyValue = start,
+                                                KeyValueEnd = end
+                                            });
+                                        }
                                     }
                                 }
                             }

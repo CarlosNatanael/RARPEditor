@@ -1,6 +1,8 @@
-﻿using RARPEditor.Models;
+﻿#nullable enable
+using RARPEditor.Models;
 using RARPEditor.Parsers;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 
 namespace RARPEditor.Logic
@@ -23,6 +25,10 @@ namespace RARPEditor.Logic
     {
         private static readonly HashSet<string> ComparisonOperators = new() { "=", "!=", "<", "<=", ">", ">=" };
         private static readonly HashSet<string> ArithmeticFlags = new() { "Add Address", "Add Source", "Sub Source", "Remember" };
+        private static readonly HashSet<string> ChainFlags = new() { "Add Address", "Add Source", "Sub Source" };
+
+        // Types that represent reading from memory (and thus impose a size limit)
+        private static readonly HashSet<string> MemoryTypes = new() { "Mem", "Delta", "Prior", "BCD", "Inverted" };
 
         public static List<ValidationResult> Validate(RichPresenceLookup lookup, RichPresenceScript script)
         {
@@ -90,6 +96,33 @@ namespace RARPEditor.Logic
                 }
             }
 
+            // Validate that a Lookup (Format=VALUE with explicit Default) is not empty.
+            if (lookup.Format == "VALUE" && lookup.Default != null)
+            {
+                if (!lookup.Entries.Any() && string.IsNullOrEmpty(lookup.Default))
+                {
+                    results.Add(new ValidationResult
+                    {
+                        Type = ValidationType.Error,
+                        Message = "Lookup is empty. A Lookup must have at least one entry or a non-empty default value."
+                    });
+                }
+            }
+
+            // Check if the lookup/formatter is unused in any display string.
+            bool isUsed = script.DisplayStrings
+                .SelectMany(ds => ds.Parts)
+                .Any(p => p.IsMacro && p.Text.Equals(lookup.Name, System.StringComparison.Ordinal));
+
+            if (!isUsed)
+            {
+                results.Add(new ValidationResult
+                {
+                    Type = ValidationType.Info,
+                    Message = "This lookup is not currently used in any display string."
+                });
+            }
+
             return results;
         }
 
@@ -105,10 +138,11 @@ namespace RARPEditor.Logic
                 }
                 else
                 {
-                    var conditionGroups = AchievementParser.ParseAchievementTrigger(displayString.Condition);
+                    var conditionGroups = AchievementParser.ParseAchievementTrigger(displayString.Condition, 'S');
                     var conditions = conditionGroups.SelectMany(g => g.Conditions).ToList();
 
                     ValidateRedundantReads(conditions, results, "the display condition");
+                    ValidateConditionValues(conditions, results, "the display condition");
 
                     var warningFlags = new HashSet<string> { "Measured", "Measured%", "MeasuredIf", "Trigger" };
 
@@ -149,7 +183,11 @@ namespace RARPEditor.Logic
                     }
                 }
 
-                if (!string.IsNullOrWhiteSpace(part.Parameter))
+                if (string.IsNullOrWhiteSpace(part.Parameter))
+                {
+                    results.Add(new ValidationResult { Type = ValidationType.Error, Message = $"Macro '{{{part.Text}}}' has no logic defined. Please select it in the dropdown and add logic." });
+                }
+                else
                 {
                     var paramConditionGroups = AchievementParser.ParseAchievementTrigger(part.Parameter, '$');
 
@@ -160,6 +198,7 @@ namespace RARPEditor.Logic
                         string groupIdentifier = $"Value Group {i + 1}";
 
                         ValidateRedundantReads(paramConditions, results, $"macro '{{{part.Text}}}' ({groupIdentifier})");
+                        ValidateConditionValues(paramConditions, results, $"macro '{{{part.Text}}}' ({groupIdentifier})");
                         ValidateMeasuredFlagRequirement(paramConditions, results, part, groupIdentifier);
 
                         bool isChain = paramConditions.Any(c => ArithmeticFlags.Contains(c.Flag));
@@ -233,6 +272,108 @@ namespace RARPEditor.Logic
             return results;
         }
 
+        private static void ValidateConditionValues(List<AchievementCondition> conditions, List<ValidationResult> results, string context)
+        {
+            foreach (var cond in conditions)
+            {
+                if (cond.LeftOperand.Type == "Float" || cond.RightOperand.Type == "Float")
+                    continue;
+
+                if (!ComparisonOperators.Contains(cond.Operator))
+                    continue;
+
+                // Case 1: Left is Mem/Delta/etc, Right is Value.
+                if (MemoryTypes.Contains(cond.LeftOperand.Type) && cond.RightOperand.Type == "Value")
+                {
+                    ulong? limit = GetMaxSizeForSize(cond.LeftOperand.Size);
+                    if (limit.HasValue && TryParseOperandValue(cond.RightOperand.Value, out ulong rightVal))
+                    {
+                        if (rightVal > limit.Value)
+                        {
+                            results.Add(new ValidationResult
+                            {
+                                Type = ValidationType.Warning,
+                                Message = $"In {context} (line {cond.ID}): Comparison value '{cond.RightOperand.Value}' ({rightVal}) exceeds the maximum value for {cond.LeftOperand.Size} ({limit.Value}). This comparison will unlikely behave as expected."
+                            });
+                        }
+                    }
+                }
+                // Case 2: Right is Mem/Delta/etc, Left is Value.
+                else if (MemoryTypes.Contains(cond.RightOperand.Type) && cond.LeftOperand.Type == "Value")
+                {
+                    ulong? limit = GetMaxSizeForSize(cond.RightOperand.Size);
+                    if (limit.HasValue && TryParseOperandValue(cond.LeftOperand.Value, out ulong leftVal))
+                    {
+                        if (leftVal > limit.Value)
+                        {
+                            results.Add(new ValidationResult
+                            {
+                                Type = ValidationType.Warning,
+                                Message = $"In {context} (line {cond.ID}): Comparison value '{cond.LeftOperand.Value}' ({leftVal}) exceeds the maximum value for {cond.RightOperand.Size} ({limit.Value}). This comparison will unlikely behave as expected."
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        private static bool TryParseOperandValue(string valueStr, out ulong result)
+        {
+            result = 0;
+            if (string.IsNullOrWhiteSpace(valueStr)) return false;
+
+            // Handle Hex
+            if (valueStr.StartsWith("0x", System.StringComparison.OrdinalIgnoreCase))
+            {
+                string hex = valueStr.Substring(2);
+                return ulong.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out result);
+            }
+            // Handle Decimal
+            return ulong.TryParse(valueStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
+        }
+
+        private static ulong? GetMaxSizeForSize(string size)
+        {
+            switch (size)
+            {
+                case "Bit0":
+                case "Bit1":
+                case "Bit2":
+                case "Bit3":
+                case "Bit4":
+                case "Bit5":
+                case "Bit6":
+                case "Bit7":
+                    return 1;
+
+                case "Lower4":
+                case "Upper4":
+                    return 15; // 0xF
+
+                case "8-bit":
+                    return 255; // 0xFF
+
+                case "16-bit":
+                case "16-bit BE":
+                    return 65535; // 0xFFFF
+
+                case "24-bit":
+                case "24-bit BE":
+                    return 16777215; // 0xFFFFFF
+
+                case "32-bit":
+                case "32-bit BE":
+                    return uint.MaxValue; // 0xFFFFFFFF
+
+                case "BitCount":
+                    return 8; // 8 bits in a byte
+
+                default:
+                    // For Float, MBF32, or empty/unknown sizes, we don't enforce integer limits
+                    return null;
+            }
+        }
+
         private static void ValidateRedundantReads(List<AchievementCondition> conditions, List<ValidationResult> results, string context)
         {
             var seenBlocks = new Dictionary<string, int>();
@@ -243,31 +384,30 @@ namespace RARPEditor.Logic
                 var block = new List<AchievementCondition>();
                 int endOfBlockIndex = i;
 
-                // A logical block is a sequence of 'Add Address' lines followed by ONE other line that uses the resulting pointer.
-                if (currentCondition.Flag == "Add Address")
+                // Treat "Add Address", "Add Source", and "Sub Source" as part of the same logical chain.
+                if (ChainFlags.Contains(currentCondition.Flag))
                 {
                     block.Add(currentCondition);
                     int j = i + 1;
-                    // Consume the rest of the pointer chain offsets.
-                    while (j < conditions.Count && conditions[j].Flag == "Add Address")
+
+                    while (j < conditions.Count)
                     {
-                        block.Add(conditions[j]);
+                        var nextCondition = conditions[j];
+                        block.Add(nextCondition);
                         j++;
+
+                        if (!ChainFlags.Contains(nextCondition.Flag))
+                        {
+                            break;
+                        }
                     }
-                    // Now, consume the final line that USES the pointer.
-                    // This could be Add Source, Sub Source, or a comparison line.
-                    if (j < conditions.Count)
-                    {
-                        block.Add(conditions[j]);
-                        endOfBlockIndex = j;
-                    }
+                    endOfBlockIndex = j - 1;
                 }
-                else // It's a standalone condition, so the block is just this one line.
+                else
                 {
                     block.Add(currentCondition);
                 }
 
-                // Generate a unique key for the entire logical block, including flags, operands, types, and comparisons.
                 string blockKey = string.Join(";", block.Select(c =>
                     $"{c.Flag}|{c.LeftOperand.Type}|{c.LeftOperand.Size}|{c.LeftOperand.Value}|" +
                     $"{c.Operator}|{c.RightOperand.Type}|{c.RightOperand.Size}|{c.RightOperand.Value}"
@@ -278,7 +418,7 @@ namespace RARPEditor.Logic
                 if (seenBlocks.TryGetValue(blockKey, out int firstStartLine))
                 {
                     string currentBlockDescription;
-                    if (block.Count > 1 && block.First().Flag == "Add Address")
+                    if (block.Count > 1 && ChainFlags.Contains(block.First().Flag))
                     {
                         currentBlockDescription = $"the logical block from line {startLine} to {block.Last().ID}";
                     }
@@ -298,7 +438,6 @@ namespace RARPEditor.Logic
                     seenBlocks[blockKey] = startLine;
                 }
 
-                // Advance the main loop past the block we just processed.
                 i = endOfBlockIndex;
             }
         }

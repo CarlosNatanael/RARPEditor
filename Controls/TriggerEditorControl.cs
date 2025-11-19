@@ -185,7 +185,9 @@ namespace RARPEditor.Controls
             row.Cells[ColCmp.Index].Value = cond.Operator;
             row.Cells[ColRType.Index].Value = cond.RightOperand.Type;
             row.Cells[ColRSize.Index].Value = cond.RightOperand.Size;
-            row.Cells[ColRValue.Index].Value = FormatDisplayValue(cond.RightOperand, cond.LeftOperand.Size);
+
+            // Use helper to determine correct padding for Right Operand (full 32-bit for arithmetic)
+            row.Cells[ColRValue.Index].Value = FormatDisplayValue(cond.RightOperand, GetRightOperandSizeReference(cond));
 
             // --- Cell ReadOnly/Styling Logic ---
             var lSizeCell = row.Cells[ColLSize.Index];
@@ -200,6 +202,8 @@ namespace RARPEditor.Controls
                 {
                     lValueCell.ReadOnly = true;
                     lValueCell.Style.BackColor = SystemColors.ControlLight;
+                    // Ensure cleared if visually Recall
+                    row.Cells[ColLValue.Index].Value = "";
                 }
                 else
                 {
@@ -232,16 +236,27 @@ namespace RARPEditor.Controls
             {
                 rTypeCell.ReadOnly = false;
                 rTypeCell.Style.BackColor = SystemColors.Window;
-                rValueCell.ReadOnly = false;
-                rValueCell.Style.BackColor = SystemColors.Window;
 
-                if (cond.RightOperand.Type is "Float" or "Value")
+                // Handle styling for Recall type on Right Operand
+                if (cond.RightOperand.Type == "Recall")
                 {
+                    rSizeCell.ReadOnly = true;
+                    rSizeCell.Style.BackColor = SystemColors.ControlLight;
+                    rValueCell.ReadOnly = true;
+                    rValueCell.Style.BackColor = SystemColors.ControlLight;
+                    row.Cells[ColRValue.Index].Value = ""; // Ensure visually empty
+                }
+                else if (cond.RightOperand.Type is "Float" or "Value")
+                {
+                    rValueCell.ReadOnly = false;
+                    rValueCell.Style.BackColor = SystemColors.Window;
                     rSizeCell.ReadOnly = true;
                     rSizeCell.Style.BackColor = SystemColors.ControlLight;
                 }
                 else
                 {
+                    rValueCell.ReadOnly = false;
+                    rValueCell.Style.BackColor = SystemColors.Window;
                     rSizeCell.ReadOnly = false;
                     rSizeCell.Style.BackColor = SystemColors.Window;
                 }
@@ -261,6 +276,18 @@ namespace RARPEditor.Controls
                 row.Cells[ColHits.Index].ReadOnly = false;
                 row.Cells[ColHits.Index].Style.BackColor = SystemColors.Window;
             }
+        }
+
+        // Helper method to determine the display size (padding) for the Right Operand.
+        // If the operator is arithmetic (*, /, %, +, -, &, ^), we ignore the Left Operand's size 
+        // and default to 32-bit (8-char) padding to correctly display scaling factors.
+        private string GetRightOperandSizeReference(AchievementCondition cond)
+        {
+            if (ArithmeticOperators.Contains(cond.Operator) && cond.Operator != NO_OPERATOR_TEXT)
+            {
+                return "32-bit"; // Forces 8 char padding via GetPaddingForSize
+            }
+            return cond.LeftOperand.Size;
         }
 
         private string FormatDisplayValue(Operand operand, string sizeReference = "")
@@ -284,7 +311,9 @@ namespace RARPEditor.Controls
                 }
                 else if (operand.Type != "Float") // Mem, Delta, Prior etc.
                 {
-                    int padding = GetPaddingForSize(operand.Size);
+                    // Always use 8 digits padding for memory addresses/accessors, regardless of data read size.
+                    // The address itself is 32-bit.
+                    int padding = 8;
                     return "0x" + val.ToString($"X{padding}");
                 }
             }
@@ -470,11 +499,12 @@ namespace RARPEditor.Controls
             long val;
             int padding;
 
-            if (operandType == "Mem")
+            if (operandType == "Mem" || operandType == "Delta" || operandType == "Prior" || operandType == "BCD" || operandType == "Inverted")
             {
                 string hexInput = input.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? input.Substring(2) : input;
                 if (!long.TryParse(hexInput, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out val))
                     return input;
+                // Always force 8 padding for memory addresses
                 padding = 8;
             }
             else if (operandType == "Value")
@@ -513,7 +543,8 @@ namespace RARPEditor.Controls
             }
             else if (cell.OwningColumn == ColRValue)
             {
-                cond.RightOperand.Value = ParseAndFormatValue(value, cond.RightOperand.Type, cond.LeftOperand.Size);
+                // Use helper to determine correct padding for user input
+                cond.RightOperand.Value = ParseAndFormatValue(value, cond.RightOperand.Type, GetRightOperandSizeReference(cond));
             }
             else if (cell.OwningColumn == ColHits)
             {
@@ -550,9 +581,8 @@ namespace RARPEditor.Controls
 
         private void ShowEditingMenuForCell(int columnIndex, int rowIndex)
         {
-            // Reverted to checking the cell's style, as the ReadOnly property was causing cascading issues.
-            // This correctly blocks interaction with visually disabled cells without breaking others.
-            if (triggerGrid.Rows[rowIndex].Cells[columnIndex].Style.BackColor == SystemColors.ControlLight)
+            // Use the explicit ReadOnly property instead of the cell's background color for robustness.
+            if (triggerGrid.Rows[rowIndex].Cells[columnIndex].ReadOnly)
             {
                 return;
             }
@@ -610,14 +640,14 @@ namespace RARPEditor.Controls
                         cond.Flag = newValue;
                         HandleFlagChange(cond, oldFlag);
                         break;
-                    case var _ when _currentEditColumnIndex == ColLType.Index: HandleTypeChange(cond.LeftOperand, newValue, true); break;
+                    case var _ when _currentEditColumnIndex == ColLType.Index: HandleTypeChange(cond.LeftOperand, newValue, true, cond.LeftOperand.Size); break;
                     case var _ when _currentEditColumnIndex == ColLSize.Index: HandleSizeChange(cond.LeftOperand, newValue); break;
                     case var _ when _currentEditColumnIndex == ColCmp.Index:
                         string oldOperator = cond.Operator;
                         cond.Operator = newValue;
                         HandleOperatorChange(cond, oldOperator);
                         break;
-                    case var _ when _currentEditColumnIndex == ColRType.Index: HandleTypeChange(cond.RightOperand, newValue, false); break;
+                    case var _ when _currentEditColumnIndex == ColRType.Index: HandleTypeChange(cond.RightOperand, newValue, false, cond.LeftOperand.Size); break;
                     case var _ when _currentEditColumnIndex == ColRSize.Index: HandleSizeChange(cond.RightOperand, newValue); break;
                 }
 
@@ -628,22 +658,35 @@ namespace RARPEditor.Controls
             BuildTriggerAndNotify();
         }
 
-        private void HandleTypeChange(Operand op, string newType, bool isLeftOperand)
+        private void HandleTypeChange(Operand op, string newType, bool isLeftOperand, string referenceSize)
         {
             string oldType = op.Type;
             if (oldType == newType) return;
 
             // --- Step 1: Handle special cases that reset everything ---
-            if (newType == "Recall" && isLeftOperand)
+
+            // If switching TO Recall
+            if (newType == "Recall")
             {
                 op.Value = "";
                 op.Type = newType;
                 return;
             }
 
-            if (string.IsNullOrEmpty(op.Value) || (oldType == "Recall" && isLeftOperand))
+            // If switching FROM Recall, or if Value is empty
+            if (string.IsNullOrEmpty(op.Value) || (oldType == "Recall"))
             {
-                op.Value = (newType == "Float") ? "1.0" : "0x1";
+                if (newType == "Float")
+                {
+                    op.Value = "1.0";
+                }
+                else
+                {
+                    // Use reference size (Left Operand Size) to determine padding for the default value of 1
+                    // If this is the Left Operand itself, we use its own size (which is passed in as referenceSize)
+                    int padding = GetPaddingForSize(referenceSize);
+                    op.Value = "0x" + 1.ToString("X" + padding);
+                }
             }
 
             // --- Step 2: Reinterpret the value's bit pattern if needed ---
@@ -821,6 +864,7 @@ namespace RARPEditor.Controls
             }
         }
 
+        // ... [Context Menu Opening, Copy/Paste Logic, Move/Delete/Duplicate - Unchanged] ...
         private void contextMenuStrip_Opening(object sender, CancelEventArgs e)
         {
             bool anySelected = triggerGrid.SelectedRows.Count > 0;
@@ -865,10 +909,7 @@ namespace RARPEditor.Controls
             var clipboardText = Clipboard.GetText();
             if (string.IsNullOrWhiteSpace(clipboardText)) return;
 
-            if (!clipboardText.Contains("0x") && !clipboardText.Contains(':') && !clipboardText.Contains("_"))
-            {
-                return;
-            }
+            if (!clipboardText.Contains("0x") && !clipboardText.Contains(':') && !clipboardText.Contains("_")) return;
 
             var pastedConditions = AchievementParser.ParseAchievementTrigger(clipboardText)
                 .SelectMany(g => g.Conditions)
@@ -1028,7 +1069,6 @@ namespace RARPEditor.Controls
             BuildTriggerAndNotify();
             StatusUpdateRequested?.Invoke(this, $"Duplicated {selectedRows.Count} line(s).");
 
-            // Select the newly created rows.
             triggerGrid.ClearSelection();
             for (int i = 0; i < clonedConditions.Count; i++)
             {
@@ -1038,3 +1078,4 @@ namespace RARPEditor.Controls
         #endregion
     }
 }
+#nullable restore

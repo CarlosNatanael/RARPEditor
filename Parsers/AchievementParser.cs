@@ -41,30 +41,22 @@ namespace RARPEditor.Parsers
             if (string.IsNullOrEmpty(trigger)) return conditionSet;
 
             string[] groupStrings;
+
+            // Use Regex to properly split by 'S' only if it is NOT preceded by "0x".
+            // This prevents corruption of memory addresses like "0xS1234" (Bit6) while correctly identifying Alt Groups.
             if (separator == 'S')
             {
-                // 'S' is used for both "Bit6" size (0xS...) and as a separator for Alt groups.
-                // To fix this, we temporarily replace legitimate uses of 'S' as a size modifier,
-                // perform the split, and then restore it. Case-insensitivity is important.
-                string safeTrigger = trigger.Replace("0xS", "0x\u0001").Replace("0xs", "0x\u0001");
-                groupStrings = safeTrigger.Split(separator);
+                // Pattern: Match 'S' only if the characters immediately preceding it are NOT "0x" (case-insensitive).
+                groupStrings = Regex.Split(trigger, @"(?<!0x)S", RegexOptions.IgnoreCase);
             }
             else
             {
-                // '$' is not a hex character, so no special handling is needed.
                 groupStrings = trigger.Split(separator);
             }
-
 
             for (int i = 0; i < groupStrings.Length; i++)
             {
                 if (string.IsNullOrEmpty(groupStrings[i])) continue;
-
-                string restoredGroupString = groupStrings[i];
-                if (separator == 'S')
-                {
-                    restoredGroupString = groupStrings[i].Replace('\u0001', 'S');
-                }
 
                 var group = new AchievementConditionGroup
                 {
@@ -73,7 +65,7 @@ namespace RARPEditor.Parsers
                         : $"Value Group {i + 1}"
                 };
 
-                ParseConditionsIntoGroup(group, restoredGroupString);
+                ParseConditionsIntoGroup(group, groupStrings[i]);
                 conditionSet.Add(group);
             }
             return conditionSet;
@@ -220,11 +212,9 @@ namespace RARPEditor.Parsers
                     if (string.IsNullOrEmpty(operand.Type)) operand.Type = "Value";
                     operand.Value = $"0x{val:X}";
                 }
-                // If not a valid long, it's a malformed string; we'll create an empty operand.
             }
 
             return operand;
         }
     }
 }
-#nullable disable

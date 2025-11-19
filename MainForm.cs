@@ -9,6 +9,7 @@ using System.Drawing.Drawing2D;
 using RARPEditor.Logic;
 using RARPEditor.Forms;
 using System.Text.RegularExpressions;
+using Timer = System.Windows.Forms.Timer;
 
 namespace RARPEditor.Forms
 {
@@ -17,6 +18,11 @@ namespace RARPEditor.Forms
         private RichPresenceScript _currentScript;
         private string _currentFilePath = "";
         private bool _isDirty;
+
+        private readonly Timer _undoDebounceTimer;
+        private const int DebounceIntervalMs = 500;
+
+        private string _projectFilter = "";
 
         private const string AppTitle = "RARP Editor";
         private const string UnsavedChangesMarker = "*";
@@ -45,6 +51,9 @@ namespace RARPEditor.Forms
             InitializeComponent();
             _currentScript = new RichPresenceScript();
             _stateManager = new StateManager<RichPresenceScript>(_currentScript.Clone());
+
+            _undoDebounceTimer = new Timer { Interval = DebounceIntervalMs };
+            _undoDebounceTimer.Tick += UndoDebounceTimer_Tick;
 
             InitializeTreeViewImageList();
 
@@ -107,6 +116,10 @@ namespace RARPEditor.Forms
             }
 
             _currentScript.Lookups.Add(newLookup);
+
+            // Reorder execution. PopulateProjectExplorer recreates nodes (defaulting to Error Icon).
+            // OnDataChanged runs validation. We must populate FIRST, then validate.
+            PopulateProjectExplorer();
             OnDataChanged();
 
             var newNode = FindNodeByTag(projectExplorerTreeView.Nodes, newLookup);
@@ -140,7 +153,6 @@ namespace RARPEditor.Forms
             }
             imageList.Images.Add(SuccessIconKey, successBmp);
 
-            // Add a yellow warning icon.
             // Warning Icon (⚠)
             var warningBmp = new Bitmap(16, 16);
             using (var g = Graphics.FromImage(warningBmp))
@@ -181,9 +193,31 @@ namespace RARPEditor.Forms
                 _isDirty = true;
                 UpdateFormTitle();
             }
+
+            _undoDebounceTimer.Stop();
+            _undoDebounceTimer.Start();
+
+            UpdateActiveNodeText();
+
+            if (projectExplorerTreeView.SelectedNode?.Tag is RichPresenceDisplayString displayStringForPreview)
+            {
+                _livePreviewControl.LoadDisplayString(displayStringForPreview, _currentScript);
+            }
+
+            _helpAndValidationControl.UpdateView(projectExplorerTreeView.SelectedNode?.Tag ?? projectExplorerTreeView.SelectedNode, _currentScript);
+
+            ValidateAllNodes();
+        }
+
+        private void UndoDebounceTimer_Tick(object? sender, EventArgs e)
+        {
+            _undoDebounceTimer.Stop();
             _stateManager.RecordState(_currentScript.Clone());
             UpdateUndoRedoMenu();
+        }
 
+        private void UpdateActiveNodeText()
+        {
             if (projectExplorerTreeView.SelectedNode != null)
             {
                 var node = projectExplorerTreeView.SelectedNode;
@@ -197,15 +231,6 @@ namespace RARPEditor.Forms
                         break;
                 }
             }
-
-            if (projectExplorerTreeView.SelectedNode?.Tag is RichPresenceDisplayString displayStringForPreview)
-            {
-                _livePreviewControl.LoadDisplayString(displayStringForPreview, _currentScript);
-            }
-
-            _helpAndValidationControl.UpdateView(projectExplorerTreeView.SelectedNode?.Tag ?? projectExplorerTreeView.SelectedNode, _currentScript);
-
-            ValidateAllNodes();
         }
 
         #region Undo / Redo
@@ -238,8 +263,6 @@ namespace RARPEditor.Forms
                 {
                     ToggleNodeInSelection(node);
                 }
-                // After restoring state, explicitly reload the editor for the selected node.
-                // This ensures the UI control (e.g., TriggerEditorControl) updates its view.
                 LoadEditorForSelectedNode();
             }
             else
@@ -264,7 +287,6 @@ namespace RARPEditor.Forms
                     if (dsTag.InternalId == dsToFind.InternalId) return node;
                 }
 
-
                 var foundNode = FindNodeByTag(node.Nodes, tag);
                 if (foundNode != null) return foundNode;
             }
@@ -273,9 +295,6 @@ namespace RARPEditor.Forms
 
         private void editToolStripMenuItem_DropDownOpening(object sender, EventArgs e)
         {
-            // This forces the active control (like a TextBox) to fire its Leave event,
-            // which in turn saves the current state if there are any changes.
-            // This makes sure the Undo/Redo menu items are enabled correctly.
             this.ActiveControl = null;
         }
 
@@ -287,9 +306,8 @@ namespace RARPEditor.Forms
 
         private void undoToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            // Force focus away from the current control to ensure any pending
-            // changes (like in a TextBox) are committed via the Leave event before undoing.
             this.ActiveControl = null;
+            _undoDebounceTimer.Stop();
 
             var previousState = _stateManager.Undo();
             if (previousState != null)
@@ -301,9 +319,8 @@ namespace RARPEditor.Forms
 
         private void redoToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            // Force focus away from the current control to ensure any pending
-            // changes are committed before redoing.
             this.ActiveControl = null;
+            _undoDebounceTimer.Stop();
 
             var futureState = _stateManager.Redo();
             if (futureState != null)
@@ -363,17 +380,15 @@ namespace RARPEditor.Forms
 
         private void CheckAndCreateDefaultDisplayString()
         {
-            // Clear any previous default flags
             foreach (var ds in _currentScript.DisplayStrings) ds.IsDefault = false;
 
             var lastDisplayString = _currentScript.DisplayStrings.LastOrDefault();
 
-            // If the last item is simple (no condition, no macros), we'll treat it as the default.
             if (lastDisplayString != null && string.IsNullOrEmpty(lastDisplayString.Condition) && lastDisplayString.Parts.All(p => !p.IsMacro))
             {
                 lastDisplayString.IsDefault = true;
             }
-            else // Otherwise, create and add a new one.
+            else
             {
                 var newDefault = new RichPresenceDisplayString
                 {
@@ -572,7 +587,6 @@ namespace RARPEditor.Forms
 
         #region UI Population & Updates
 
-        // New helper method to determine icon based on validation result severity.
         private string GetIconKeyForValidationResults(List<ValidationResult> results)
         {
             if (results.Any(r => r.Type == ValidationType.Error)) return ErrorIconKey;
@@ -581,7 +595,6 @@ namespace RARPEditor.Forms
             return SuccessIconKey;
         }
 
-        // Update validation logic to handle multiple result types and set icons based on severity.
         private void ValidateAllNodes()
         {
             foreach (TreeNode parentNode in projectExplorerTreeView.Nodes)
@@ -611,7 +624,6 @@ namespace RARPEditor.Forms
                     if (node.ImageKey != iconKey) node.ImageKey = iconKey;
                     if (node.SelectedImageKey != iconKey) node.SelectedImageKey = iconKey;
 
-                    // Determine the parent's severity (highest of all children)
                     if (results.Any(r => r.Type == ValidationType.Error))
                     {
                         overallSeverity = ValidationType.Error;
@@ -662,8 +674,13 @@ namespace RARPEditor.Forms
                 return;
             }
 
+            string filter = _projectFilter.Trim();
+            bool isFiltering = !string.IsNullOrEmpty(filter);
+
             foreach (var lookup in _currentScript.Lookups)
             {
+                if (isFiltering && !lookup.Name.Contains(filter, StringComparison.OrdinalIgnoreCase)) continue;
+
                 var node = new TreeNode(lookup.Name) { Tag = lookup };
                 if (lookup.Format == "VALUE" && (lookup.Entries.Any() || lookup.Default != null))
                 {
@@ -677,12 +694,32 @@ namespace RARPEditor.Forms
 
             foreach (var displayString in _currentScript.DisplayStrings)
             {
-                var node = new TreeNode(displayString.ToFormattedString(_currentScript)) { Tag = displayString };
+                string formattedText = displayString.ToFormattedString(_currentScript);
+                if (isFiltering && !formattedText.Contains(filter, StringComparison.OrdinalIgnoreCase)) continue;
+
+                var node = new TreeNode(formattedText) { Tag = displayString };
                 displayLogicNode.Nodes.Add(node);
             }
 
             projectExplorerTreeView.ExpandAll();
             projectExplorerTreeView.EndUpdate();
+        }
+
+        private void searchTextBox_TextChanged(object sender, EventArgs e)
+        {
+            _projectFilter = searchTextBox.Text;
+            PopulateProjectExplorer();
+
+            ValidateAllNodes();
+
+            if (projectExplorerTreeView.SelectedNode == null)
+            {
+                ClearEditorPanel();
+            }
+            else
+            {
+                projectExplorerTreeView.SelectedNode.EnsureVisible();
+            }
         }
         #endregion
 
@@ -896,7 +933,6 @@ namespace RARPEditor.Forms
                 }
             }
 
-            // Add a fallback to an empty string to ensure nodeKey is not null, resolving a warning.
             string nodeKey = selectedNode.Parent?.Name ?? selectedNode.Name ?? "";
 
             switch (nodeKey)
@@ -1081,7 +1117,9 @@ namespace RARPEditor.Forms
                 }
             }
 
-            OnDataChanged();
+            // Do NOT call OnDataChanged here (which runs validation on the old tree).
+            // Instead, we remove the UI nodes first, then call OnDataChanged at the end.
+            // OnDataChanged();
             UpdateStatus($"Deleted {nodesToDelete.Count} item(s).");
 
             projectExplorerTreeView.BeginUpdate();
@@ -1091,6 +1129,9 @@ namespace RARPEditor.Forms
                 node.Remove();
             }
             projectExplorerTreeView.EndUpdate();
+
+            // Now that the tree is updated (nodes removed), run validation/state saving.
+            OnDataChanged();
 
             if (parent != null && parent.Nodes.Count > 0)
             {
@@ -1407,3 +1448,4 @@ namespace RARPEditor.Forms
         #endregion
     }
 }
+#nullable restore

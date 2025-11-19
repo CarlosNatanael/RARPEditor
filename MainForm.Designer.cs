@@ -48,6 +48,7 @@ namespace RARPEditor.Forms
             this.toolStripSeparator3 = new System.Windows.Forms.ToolStripSeparator();
             this.moveUpToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.moveDownToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.searchTextBox = new System.Windows.Forms.TextBox();
             this.rightContainer = new System.Windows.Forms.SplitContainer();
             this.editorPanel = new System.Windows.Forms.Panel();
             this.welcomeLabel = new System.Windows.Forms.Label();
@@ -150,7 +151,6 @@ namespace RARPEditor.Forms
             this.editToolStripMenuItem.Name = "editToolStripMenuItem";
             this.editToolStripMenuItem.Size = new System.Drawing.Size(39, 20);
             this.editToolStripMenuItem.Text = "&Edit";
-            // Add event handler to ensure textbox changes are committed before the menu is shown.
             this.editToolStripMenuItem.DropDownOpening += new System.EventHandler(this.editToolStripMenuItem_DropDownOpening);
             // 
             // undoToolStripMenuItem
@@ -194,6 +194,7 @@ namespace RARPEditor.Forms
             // mainContainer.Panel1
             // 
             this.mainContainer.Panel1.Controls.Add(this.projectExplorerTreeView);
+            this.mainContainer.Panel1.Controls.Add(this.searchTextBox);
             this.mainContainer.Panel1MinSize = 200;
             // 
             // mainContainer.Panel2
@@ -210,7 +211,7 @@ namespace RARPEditor.Forms
             this.projectExplorerTreeView.ContextMenuStrip = this.projectExplorerContextMenuStrip;
             this.projectExplorerTreeView.Dock = System.Windows.Forms.DockStyle.Fill;
             this.projectExplorerTreeView.HideSelection = false;
-            this.projectExplorerTreeView.Location = new System.Drawing.Point(0, 0);
+            this.projectExplorerTreeView.Location = new System.Drawing.Point(0, 23);
             this.projectExplorerTreeView.Name = "projectExplorerTreeView";
             treeNode1.Name = "lookupsNode";
             treeNode1.Text = "Lookups";
@@ -222,8 +223,8 @@ namespace RARPEditor.Forms
             treeNode1,
             treeNode2,
             treeNode3});
-            this.projectExplorerTreeView.Size = new System.Drawing.Size(250, 635);
-            this.projectExplorerTreeView.TabIndex = 0;
+            this.projectExplorerTreeView.Size = new System.Drawing.Size(250, 612);
+            this.projectExplorerTreeView.TabIndex = 1;
             this.projectExplorerTreeView.AfterSelect += new System.Windows.Forms.TreeViewEventHandler(this.projectExplorerTreeView_AfterSelect);
             this.projectExplorerTreeView.ItemDrag += new System.Windows.Forms.ItemDragEventHandler(this.projectExplorerTreeView_ItemDrag);
             this.projectExplorerTreeView.NodeMouseDoubleClick += new System.Windows.Forms.TreeNodeMouseClickEventHandler(this.projectExplorerTreeView_NodeMouseDoubleClick);
@@ -311,6 +312,16 @@ namespace RARPEditor.Forms
             this.moveDownToolStripMenuItem.Text = "Move Down";
             this.moveDownToolStripMenuItem.Click += new System.EventHandler(this.moveDownToolStripMenuItem_Click);
             // 
+            // searchTextBox
+            // 
+            this.searchTextBox.Dock = System.Windows.Forms.DockStyle.Top;
+            this.searchTextBox.Location = new System.Drawing.Point(0, 0);
+            this.searchTextBox.Name = "searchTextBox";
+            this.searchTextBox.PlaceholderText = "Search...";
+            this.searchTextBox.Size = new System.Drawing.Size(250, 23);
+            this.searchTextBox.TabIndex = 0;
+            this.searchTextBox.TextChanged += new System.EventHandler(this.searchTextBox_TextChanged);
+            // 
             // rightContainer
             // 
             this.rightContainer.Dock = System.Windows.Forms.DockStyle.Fill;
@@ -393,6 +404,7 @@ namespace RARPEditor.Forms
             this.statusStrip.ResumeLayout(false);
             this.statusStrip.PerformLayout();
             this.mainContainer.Panel1.ResumeLayout(false);
+            this.mainContainer.Panel1.PerformLayout();
             this.mainContainer.Panel2.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.mainContainer)).EndInit();
             this.mainContainer.ResumeLayout(false);
@@ -442,6 +454,7 @@ namespace RARPEditor.Forms
         private ToolStripMenuItem addFormatterToolStripMenuItem;
         private ToolStripMenuItem recentFilesToolStripMenuItem;
         private ToolStripMenuItem duplicateToolStripMenuItem;
+        private TextBox searchTextBox;
     }
 }
 #nullable restore
