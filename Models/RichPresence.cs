@@ -1,4 +1,6 @@
-﻿using System.ComponentModel;
+﻿#nullable enable
+
+using System.ComponentModel;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -37,7 +39,9 @@ namespace RARPEditor.Models
             "FLOAT3",
             "FLOAT4",
             "FLOAT5",
-            "FLOAT6"
+            "FLOAT6",
+            "ASCIIChar",
+            "UnicodeChar"
         };
 
         [Category("General")]
@@ -157,6 +161,8 @@ namespace RARPEditor.Models
                 "FLOAT4" => "0.0000",
                 "FLOAT5" => "0.00000",
                 "FLOAT6" => "0.000000",
+                "ASCIICHAR" => value >= 0x20 && value <= 0x7E ? ((char)value).ToString() : "?",
+                "UNICODECHAR" => value >= 0x20 ? ((char)value).ToString() : "?",
                 "VALUE" or _ => value.ToString(),
             };
         }
@@ -182,8 +188,16 @@ namespace RARPEditor.Models
                     }
                     else
                     {
-                        // Revert to using curly braces for display.
-                        sb.Append($"{{{part.Text}}}");
+                        // Check if it's a built-in formatter that doesn't have a Lookup definition
+                        if (RichPresenceLookup.BuiltInFormatters.Contains(part.Text.ToUpper()))
+                        {
+                            sb.Append(FormatStaticValue(0, part.Text));
+                        }
+                        else
+                        {
+                            // Revert to using curly braces for display.
+                            sb.Append($"{{{part.Text}}}");
+                        }
                     }
                 }
                 else
@@ -245,3 +259,4 @@ namespace RARPEditor.Models
         }
     }
 }
+#nullable disable

@@ -233,6 +233,13 @@ namespace RARPEditor.Parsers
 
             foreach (var lookup in formatLookups)
             {
+                // Skip serialization if the formatter name is a built-in keyword.
+                // These are reserved and handled natively by RA integration.
+                if (RichPresenceLookup.BuiltInFormatters.Contains(lookup.Name.ToUpper()))
+                {
+                    continue;
+                }
+
                 sb.AppendLine($"Format:{lookup.Name}");
                 sb.AppendLine($"FormatType={lookup.Format}");
                 sb.AppendLine();
