@@ -14,6 +14,10 @@ namespace RARPEditor.Controls
         private string _triggerText = "";
         private List<AchievementCondition> _conditions = new();
         private bool _showDecimal = false;
+        private bool _collapseChains = false; // New property backing field
+
+        // New UI Control
+        private CheckBox collapseChainsCheckBox;
 
         public event EventHandler? TriggerTextChanged;
         public event EventHandler<string>? StatusUpdateRequested;
@@ -65,8 +69,40 @@ namespace RARPEditor.Controls
         public TriggerEditorControl()
         {
             InitializeComponent();
+            InitializeCustomUI();
             SetupGrid();
             CreateEditingContextMenus();
+        }
+
+        private void InitializeCustomUI()
+        {
+            // Add Collapse Chains checkbox to toolbar
+            collapseChainsCheckBox = new CheckBox();
+            collapseChainsCheckBox.Text = "Collapse Chains";
+            collapseChainsCheckBox.Appearance = Appearance.Button;
+            collapseChainsCheckBox.AutoSize = true;
+            collapseChainsCheckBox.Margin = new Padding(3, 5, 3, 3);
+            collapseChainsCheckBox.CheckedChanged += CollapseChainsCheckBox_CheckedChanged;
+
+            // Insert before Show Decimal (FlowDirection is usually RightToLeft for toolbars or just prepended)
+            // Assuming FlowLayout: Copy [Index 2], Clear [Index 1], Show Decimal [Index 0]
+            // We want it visually next to Show Decimal.
+            if (toolbarPanel.Controls.Contains(showDecimalCheckBox))
+            {
+                int index = toolbarPanel.Controls.IndexOf(showDecimalCheckBox);
+                toolbarPanel.Controls.Add(collapseChainsCheckBox);
+                toolbarPanel.Controls.SetChildIndex(collapseChainsCheckBox, 0); // Becomes the first control (rightmost)
+            }
+            else
+            {
+                toolbarPanel.Controls.Add(collapseChainsCheckBox);
+            }
+        }
+
+        private void CollapseChainsCheckBox_CheckedChanged(object? sender, EventArgs e)
+        {
+            _collapseChains = collapseChainsCheckBox.Checked;
+            PopulateGridFromConditions();
         }
 
         private void SetupGrid()
@@ -143,33 +179,30 @@ namespace RARPEditor.Controls
             triggerGrid.Rows.Clear();
             if (_conditions.Any())
             {
-                var rowsToAdd = new DataGridViewRow[_conditions.Count];
+                var rowsToAdd = new List<DataGridViewRow>();
                 for (int i = 0; i < _conditions.Count; i++)
                 {
                     var cond = _conditions[i];
+
+                    // Collapse Chains Logic: Skip "Add Address" rows if enabled
+                    if (_collapseChains && cond.Flag == "Add Address")
+                    {
+                        continue;
+                    }
+
                     var row = new DataGridViewRow();
                     row.CreateCells(triggerGrid);
                     cond.ID = i + 1;
                     SetRowValuesFromCondition(row, cond);
                     row.Tag = cond;
-                    rowsToAdd[i] = row;
+                    rowsToAdd.Add(row);
                 }
-                triggerGrid.Rows.AddRange(rowsToAdd);
+                triggerGrid.Rows.AddRange(rowsToAdd.ToArray());
                 triggerGrid.ClearSelection();
-                foreach (var index in selectedIndices)
-                {
-                    if (index < triggerGrid.Rows.Count)
-                        triggerGrid.Rows[index].Selected = true;
-                }
 
-                if (firstDisplayedRow < triggerGrid.Rows.Count)
-                {
-                    try
-                    {
-                        triggerGrid.FirstDisplayedScrollingRowIndex = firstDisplayedRow;
-                    }
-                    catch { /* Can fail if grid is not visible */ }
-                }
+                // Attempt to restore selection. Indices might shift if rows are hidden, 
+                // so simply clearing is safer, or selecting the first valid one.
+                // We leave selection cleared to prevent index out of range errors.
             }
             triggerGrid.ResumeLayout();
             _isProgrammaticallyChanging = false;
@@ -181,7 +214,7 @@ namespace RARPEditor.Controls
             row.Cells[ColFlag.Index].Value = cond.Flag;
             row.Cells[ColLType.Index].Value = cond.LeftOperand.Type;
             row.Cells[ColLSize.Index].Value = cond.LeftOperand.Size;
-            row.Cells[ColLValue.Index].Value = FormatDisplayValue(cond.LeftOperand);
+            row.Cells[ColLValue.Index].Value = FormatDisplayValue(cond.LeftOperand, cond.LeftOperand.Size);
             row.Cells[ColCmp.Index].Value = cond.Operator;
             row.Cells[ColRType.Index].Value = cond.RightOperand.Type;
             row.Cells[ColRSize.Index].Value = cond.RightOperand.Size;
@@ -231,6 +264,11 @@ namespace RARPEditor.Controls
                 rSizeCell.Style.BackColor = SystemColors.ControlLight;
                 rValueCell.ReadOnly = true;
                 rValueCell.Style.BackColor = SystemColors.ControlLight;
+
+                // Clear visual values if operator is missing (e.g. Add Source, Add Address chains)
+                row.Cells[ColRType.Index].Value = "";
+                row.Cells[ColRSize.Index].Value = "";
+                row.Cells[ColRValue.Index].Value = "";
             }
             else
             {
@@ -287,6 +325,12 @@ namespace RARPEditor.Controls
             {
                 return "32-bit"; // Forces 8 char padding via GetPaddingForSize
             }
+            // If the Right operand itself has a size, use it (e.g. Mem to Mem comparison)
+            if (!string.IsNullOrEmpty(cond.RightOperand.Size))
+            {
+                return cond.RightOperand.Size;
+            }
+            // Fallback to Left Size
             return cond.LeftOperand.Size;
         }
 
@@ -294,10 +338,22 @@ namespace RARPEditor.Controls
         {
             if (string.IsNullOrEmpty(operand.Value)) return "";
 
+            // Handle Float immediately
+            if (operand.Type == "Float")
+            {
+                if (decimal.TryParse(operand.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal decVal) && decVal % 1 == 0 && !operand.Value.Contains('.'))
+                {
+                    return operand.Value + ".0";
+                }
+                return operand.Value;
+            }
+
+            // Parse as Hex
             if (long.TryParse(operand.Value.Replace("0x", ""), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out long val))
             {
                 if (operand.Type == "Value")
                 {
+                    // Only "Value" type respects the Decimal Toggle
                     if (_showDecimal)
                     {
                         return val.ToString();
@@ -306,25 +362,17 @@ namespace RARPEditor.Controls
                     {
                         int padding = GetPaddingForSize(sizeReference);
                         long mask = GetMaskForSize(sizeReference);
-                        return "0x" + (val & mask).ToString($"X{padding}");
+                        // Standardize visual output for Values (Lowercase 'x')
+                        return "0x" + (val & mask).ToString($"x{padding}");
                     }
                 }
-                else if (operand.Type != "Float") // Mem, Delta, Prior etc.
+                else
                 {
-                    // Always use 8 digits padding for memory addresses/accessors, regardless of data read size.
-                    // The address itself is 32-bit.
+                    // Mem, Delta, Prior, BCD, Inverted => Always Hex, Always 8 chars
+                    // Lowercase 'x' for addresses
                     int padding = 8;
-                    return "0x" + val.ToString($"X{padding}");
+                    return "0x" + val.ToString($"x{padding}");
                 }
-            }
-
-            if (operand.Type == "Float")
-            {
-                if (decimal.TryParse(operand.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal decVal) && decVal % 1 == 0 && !operand.Value.Contains('.'))
-                {
-                    return operand.Value + ".0";
-                }
-                return operand.Value;
             }
 
             return operand.Value; // Fallback for malformed data
@@ -469,64 +517,43 @@ namespace RARPEditor.Controls
 
             if (operandType == "Mem" && ReverseFloatSizeMap.ContainsKey(size))
             {
-                // If user enters a float literal, convert it to hex for storage.
                 if (float.TryParse(input, NumberStyles.Float, CultureInfo.InvariantCulture, out float floatVal))
                 {
                     byte[] bytes = BitConverter.GetBytes(floatVal);
-                    if (size.EndsWith("BE"))
-                    {
-                        Array.Reverse(bytes);
-                    }
-                    uint hexVal = BitConverter.ToUInt32(bytes, 0);
-                    return "0x" + hexVal.ToString("X8");
+                    if (size.EndsWith("BE")) Array.Reverse(bytes);
+                    // Lowercase 'x'
+                    return "0x" + BitConverter.ToUInt32(bytes, 0).ToString("x8");
                 }
-                // If user enters a hex value, validate and format it.
-                if (input.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (uint.TryParse(input.Substring(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out uint hexVal))
-                    {
-                        return "0x" + hexVal.ToString("X8");
-                    }
-                }
-                return input; // Invalid format, return as-is for user to correct.
-            }
-
-            if (operandType == "Float")
-            {
+                if (input.StartsWith("0x", StringComparison.OrdinalIgnoreCase) && uint.TryParse(input.Substring(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out uint hexVal))
+                    // Lowercase 'x'
+                    return "0x" + hexVal.ToString("x8");
                 return input;
             }
+
+            if (operandType == "Float") return input;
 
             long val;
-            int padding;
+            // Use helper to determine correct padding for user input
+            int padding = GetPaddingForSize(size);
 
+            // Memory types always force 8 padding and hex
             if (operandType == "Mem" || operandType == "Delta" || operandType == "Prior" || operandType == "BCD" || operandType == "Inverted")
             {
-                string hexInput = input.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? input.Substring(2) : input;
-                if (!long.TryParse(hexInput, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out val))
-                    return input;
-                // Always force 8 padding for memory addresses
                 padding = 8;
             }
-            else if (operandType == "Value")
-            {
-                if (input.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!long.TryParse(input.Substring(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out val))
-                        return input;
-                }
-                else
-                {
-                    if (!long.TryParse(input, NumberStyles.Integer, CultureInfo.InvariantCulture, out val))
-                        return input;
-                }
-                padding = GetPaddingForSize(size);
-            }
-            else
-            {
-                return input;
-            }
 
-            return "0x" + val.ToString($"X{padding}");
+            if (input.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            {
+                if (long.TryParse(input.Substring(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out val))
+                    // Lowercase 'x'
+                    return "0x" + val.ToString($"x{padding}");
+            }
+            else if (long.TryParse(input, NumberStyles.Integer, CultureInfo.InvariantCulture, out val))
+            {
+                // Lowercase 'x' (only applies if converting Decimal input -> Hex output)
+                return "0x" + val.ToString($"x{padding}");
+            }
+            return input;
         }
 
         private void triggerGrid_CellValueChanged(object? sender, DataGridViewCellEventArgs e)
@@ -618,6 +645,7 @@ namespace RARPEditor.Controls
 
             string newValue = (newDisplayValue == NO_FLAG_TEXT || newDisplayValue == NO_OPERATOR_TEXT) ? "" : newDisplayValue;
 
+            // Updated selection retrieval to include current row if selection is empty/weird
             List<DataGridViewRow> rowsToModify = new List<DataGridViewRow>();
             if (triggerGrid.SelectedRows.Count > 0)
             {
@@ -750,7 +778,7 @@ namespace RARPEditor.Controls
             else if (!wasArithmetic && isArithmetic)
             {
                 cond.Operator = "";
-                cond.RightOperand = new Operand();
+                cond.RightOperand = new Operand(); // Explicitly clear logic properties
             }
             // All other switches (e.g., Non-Arithmetic to Non-Arithmetic) will preserve the existing values.
         }
@@ -832,14 +860,19 @@ namespace RARPEditor.Controls
                 PasteLogic();
                 e.Handled = true;
             }
-            else if (e.Control && e.KeyCode == Keys.C)
-            {
-                CopySelectedRows();
-                e.Handled = true;
-            }
             else if (e.Control && e.Shift && e.KeyCode == Keys.C)
             {
-                CopySelectedLogic();
+                CopySelectedRowsAligned(); // New Aligned Copy
+                e.Handled = true;
+            }
+            else if (e.Control && e.KeyCode == Keys.C)
+            {
+                CopySelectedLogic(); // New: Copy Logic string by default
+                e.Handled = true;
+            }
+            else if (e.Control && e.KeyCode == Keys.X)
+            {
+                CutSelectedLogic(); // New: Cut
                 e.Handled = true;
             }
             else if (e.Control && e.KeyCode == Keys.D)
@@ -886,8 +919,8 @@ namespace RARPEditor.Controls
 
         private void copyButton_Click(object sender, EventArgs e)
         {
-            Clipboard.SetText(_triggerText);
-            StatusUpdateRequested?.Invoke(this, "Logic copied to clipboard.");
+            // Default Copy button now copies logic string
+            CopySelectedLogic();
         }
         private void clearButton_Click(object sender, EventArgs e)
         {
@@ -920,58 +953,97 @@ namespace RARPEditor.Controls
             int insertionIndex = _conditions.Count;
             if (triggerGrid.SelectedRows.Count > 0)
             {
-                insertionIndex = triggerGrid.SelectedRows.Cast<DataGridViewRow>().Max(r => r.Index) + 1;
+                var lastRow = triggerGrid.SelectedRows.Cast<DataGridViewRow>().OrderByDescending(r => r.Index).First();
+                if (lastRow.Tag is AchievementCondition c)
+                {
+                    insertionIndex = _conditions.IndexOf(c) + 1;
+                }
             }
 
             _conditions.InsertRange(insertionIndex, pastedConditions);
 
             PopulateGridFromConditions();
 
-            if (insertionIndex < triggerGrid.Rows.Count)
+            // Try to restore selection to pasted items (safely)
+            triggerGrid.ClearSelection();
+            // Since PopulateGrid recreates rows, we need to find the rows corresponding to pasted conditions
+            foreach (DataGridViewRow row in triggerGrid.Rows)
             {
-                triggerGrid.ClearSelection();
-                triggerGrid.Rows[insertionIndex].Selected = true;
-                triggerGrid.FirstDisplayedScrollingRowIndex = insertionIndex;
+                if (row.Tag is AchievementCondition c && pastedConditions.Contains(c))
+                {
+                    row.Selected = true;
+                }
             }
 
             BuildTriggerAndNotify();
             StatusUpdateRequested?.Invoke(this, "Pasted logic from clipboard.");
         }
 
-        private void copyRowToolStripMenuItem_Click(object sender, EventArgs e) => CopySelectedRows();
-        private void CopySelectedRows()
+        private void copyRowToolStripMenuItem_Click(object sender, EventArgs e) => CopySelectedRowsAligned();
+
+        // REPLACED with Aligned Version
+        private void CopySelectedRowsAligned()
         {
             if (triggerGrid.SelectedRows.Count == 0) return;
-            var rows = triggerGrid.SelectedRows.Cast<DataGridViewRow>().ToList();
-            var sb = new StringBuilder();
+            var rows = triggerGrid.SelectedRows.Cast<DataGridViewRow>().OrderBy(r => r.Index).ToList();
+            int colCount = triggerGrid.Columns.Count;
+            int[] colWidths = new int[colCount];
 
-            foreach (var row in rows.OrderBy(r => r.Index))
+            // 1. Calculate Max Widths
+            for (int c = 0; c < colCount; c++)
             {
-                var cellValues = row.Cells.Cast<DataGridViewCell>().Select(cell => cell.FormattedValue?.ToString() ?? "");
-                sb.AppendLine(string.Join("\t", cellValues));
+                int max = 0;
+                foreach (var row in rows)
+                {
+                    string txt = row.Cells[c].FormattedValue?.ToString() ?? "";
+                    if (txt.Length > max) max = txt.Length;
+                }
+                colWidths[c] = max;
+            }
+
+            // 2. Build String with Padding
+            var sb = new StringBuilder();
+            foreach (var row in rows)
+            {
+                for (int c = 0; c < colCount; c++)
+                {
+                    string txt = row.Cells[c].FormattedValue?.ToString() ?? "";
+                    // Pad all except last column
+                    if (c < colCount - 1)
+                        sb.Append(txt.PadRight(colWidths[c] + 2)); // +2 spaces padding
+                    else
+                        sb.Append(txt);
+                }
+                sb.AppendLine();
             }
             Clipboard.SetText(sb.ToString());
-            StatusUpdateRequested?.Invoke(this, $"Copied {rows.Count} row(s) as text.");
+            StatusUpdateRequested?.Invoke(this, $"Copied {rows.Count} row(s) aligned.");
         }
 
         private void copyLogicToolStripMenuItem_Click(object sender, EventArgs e) => CopySelectedLogic();
+
+        // IMPLEMENTED CopySelectedLogic using Effective Selection
         private void CopySelectedLogic()
         {
-            if (triggerGrid.SelectedRows.Count == 0) return;
+            var conditionsToCopy = GetEffectiveSelection();
+            if (conditionsToCopy.Count == 0) return;
 
             var sb = new StringBuilder();
-            var selectedConditions = triggerGrid.SelectedRows
-                .Cast<DataGridViewRow>()
-                .OrderBy(r => r.Index)
-                .Select(r => (AchievementCondition)r.Tag!);
-
-            foreach (var cond in selectedConditions)
+            foreach (var cond in conditionsToCopy)
             {
                 if (sb.Length > 0) sb.Append('_');
                 sb.Append(ConditionToString(cond));
             }
             Clipboard.SetText(sb.ToString());
-            StatusUpdateRequested?.Invoke(this, $"Copied logic for {selectedConditions.Count()} line(s).");
+            StatusUpdateRequested?.Invoke(this, $"Copied logic for {conditionsToCopy.Count} line(s).");
+        }
+
+        // IMPLEMENTED Cut
+        private void CutSelectedLogic()
+        {
+            CopySelectedLogic();
+            DeleteSelectedItems();
+            StatusUpdateRequested?.Invoke(this, "Cut logic to clipboard.");
         }
 
         private void moveUpToolStripMenuItem_Click(object sender, EventArgs e) => MoveSelectedItems(-1);
@@ -1001,81 +1073,198 @@ namespace RARPEditor.Controls
             }
         }
 
+        // --- NEW HELPER: GetEffectiveSelection for Collapsed Chains ---
+        private List<AchievementCondition> GetEffectiveSelection()
+        {
+            // Start with visually selected rows
+            var selected = triggerGrid.SelectedRows.Cast<DataGridViewRow>()
+                .Select(r => r.Tag as AchievementCondition)
+                .Where(c => c != null)
+                .OrderBy(c => _conditions.IndexOf(c!))
+                .Cast<AchievementCondition>()
+                .ToList();
+
+            if (!_collapseChains || selected.Count == 0) return selected;
+
+            var expanded = new List<AchievementCondition>();
+            var processed = new HashSet<AchievementCondition>();
+
+            foreach (var cond in selected)
+            {
+                int idx = _conditions.IndexOf(cond);
+                if (idx == -1) continue;
+
+                // Backtrack to find hidden "Add Address" chain
+                var chain = new List<AchievementCondition>();
+                int scan = idx - 1;
+                while (scan >= 0)
+                {
+                    var prev = _conditions[scan];
+                    if (prev.Flag == "Add Address")
+                    {
+                        chain.Insert(0, prev);
+                        scan--;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+                // Add chain items first
+                foreach (var c in chain)
+                {
+                    if (processed.Add(c)) expanded.Add(c);
+                }
+
+                // Add the selected item
+                if (processed.Add(cond)) expanded.Add(cond);
+            }
+
+            return expanded;
+        }
+
+        // MODIFIED: Move logic to handle Units (Chains)
         private void MoveSelectedItems(int distance)
         {
-            if (triggerGrid.SelectedRows.Count == 0) return;
-            var selectedRows = triggerGrid.SelectedRows.Cast<DataGridViewRow>().ToList();
-            var selectedIndices = selectedRows.Select(r => r.Index).ToList();
-            var newSelectedIndices = new List<int>();
-            int minIndex = selectedIndices.Min();
-            int maxIndex = selectedIndices.Max();
-            distance = Math.Max(distance, -minIndex);
-            distance = Math.Min(distance, _conditions.Count - 1 - maxIndex);
-            if (distance == 0) return;
-            selectedIndices.Sort();
-            if (distance > 0) selectedIndices.Reverse();
-            foreach (int index in selectedIndices)
+            if (triggerGrid.SelectedRows.Count == 0 || distance == 0) return;
+
+            var selectedConditions = GetEffectiveSelection();
+            if (selectedConditions.Count == 0) return;
+
+            // Strategy: Reorder the list of conditions
+            // 1. Extract all conditions into a list of "Moveable Units".
+            var units = new List<List<AchievementCondition>>();
+
+            if (_collapseChains)
             {
-                var item = _conditions[index];
-                _conditions.RemoveAt(index);
-                _conditions.Insert(index + distance, item);
-                newSelectedIndices.Add(index + distance);
+                var currentUnit = new List<AchievementCondition>();
+                foreach (var cond in _conditions)
+                {
+                    currentUnit.Add(cond);
+                    // A unit ends if it's NOT an AddAddress (leaf) OR if it's the last item
+                    if (cond.Flag != "Add Address")
+                    {
+                        units.Add(new List<AchievementCondition>(currentUnit));
+                        currentUnit.Clear();
+                    }
+                }
+                // Handle trailing AddAddress (incomplete chain)
+                if (currentUnit.Count > 0) units.Add(currentUnit);
             }
+            else
+            {
+                // Normal mode: Each condition is a unit
+                foreach (var cond in _conditions) units.Add(new List<AchievementCondition> { cond });
+            }
+
+            // 2. Identify selected units
+            var selectedSet = new HashSet<AchievementCondition>(selectedConditions);
+            var selectedUnitIndices = new HashSet<int>();
+
+            for (int i = 0; i < units.Count; i++)
+            {
+                if (units[i].Any(c => selectedSet.Contains(c)))
+                    selectedUnitIndices.Add(i);
+            }
+
+            var sortedIndices = selectedUnitIndices.OrderBy(i => i).ToList();
+
+            // 3. Move Logic
+            if (distance < 0 && sortedIndices.Min() == 0) return; // Top
+            if (distance > 0 && sortedIndices.Max() == units.Count - 1) return; // Bottom
+
+            var newUnits = new List<List<AchievementCondition>>(units);
+
+            if (distance < 0) // Up
+            {
+                foreach (var idx in sortedIndices)
+                {
+                    var unit = newUnits[idx];
+                    newUnits.RemoveAt(idx);
+                    newUnits.Insert(idx - 1, unit);
+                }
+            }
+            else // Down
+            {
+                for (int i = sortedIndices.Count - 1; i >= 0; i--)
+                {
+                    var idx = sortedIndices[i];
+                    var unit = newUnits[idx];
+                    newUnits.RemoveAt(idx);
+                    newUnits.Insert(idx + 1, unit);
+                }
+            }
+
+            // 4. Flatten
+            _conditions.Clear();
+            foreach (var unit in newUnits) _conditions.AddRange(unit);
+
             PopulateGridFromConditions();
-            BuildTriggerAndNotify();
-            StatusUpdateRequested?.Invoke(this, $"Moved {selectedRows.Count} line(s).");
+
+            // Restore Selection
             triggerGrid.ClearSelection();
-            foreach (int newIndex in newSelectedIndices)
+            foreach (DataGridViewRow row in triggerGrid.Rows)
             {
-                if (newIndex >= 0 && newIndex < triggerGrid.Rows.Count)
-                    triggerGrid.Rows[newIndex].Selected = true;
+                if (row.Tag is AchievementCondition c && selectedSet.Contains(c))
+                {
+                    row.Selected = true;
+                }
             }
+
+            BuildTriggerAndNotify();
+            StatusUpdateRequested?.Invoke(this, $"Moved {selectedConditions.Count} line(s).");
         }
 
         private void DeleteSelectedItems()
         {
             if (triggerGrid.SelectedRows.Count == 0) return;
-            var selectedRows = triggerGrid.SelectedRows.Cast<DataGridViewRow>().ToList();
-            var selectedIndices = selectedRows.Select(r => r.Index).OrderByDescending(i => i).ToList();
 
-            foreach (var index in selectedIndices)
+            // Use Effective Selection to delete hidden chains too
+            var toDelete = GetEffectiveSelection();
+            if (toDelete.Count == 0) return;
+
+            foreach (var cond in toDelete)
             {
-                _conditions.RemoveAt(index);
+                _conditions.Remove(cond);
             }
 
             PopulateGridFromConditions();
             BuildTriggerAndNotify();
-            StatusUpdateRequested?.Invoke(this, $"Deleted {selectedRows.Count} line(s).");
+            StatusUpdateRequested?.Invoke(this, $"Deleted {toDelete.Count} line(s).");
         }
 
         private void DuplicateSelectedItems()
         {
             if (triggerGrid.SelectedRows.Count == 0) return;
 
-            var selectedRows = triggerGrid.SelectedRows.Cast<DataGridViewRow>()
-                .OrderBy(r => r.Index)
-                .ToList();
+            // Use Effective Selection to duplicate chains properly
+            var originalConditions = GetEffectiveSelection();
+            if (originalConditions.Count == 0) return;
 
-            int insertionIndex = selectedRows.Max(r => r.Index) + 1;
+            // Insert after the last item in the effective selection
+            var lastCondition = originalConditions.Last();
+            int insertIdx = _conditions.IndexOf(lastCondition) + 1;
 
-            var clonedConditions = selectedRows
-                .Select(row => (AchievementCondition)row.Tag!)
-                .Select(cond => cond.Clone())
-                .ToList();
+            var clones = originalConditions.Select(c => c.Clone()).ToList();
 
-            _conditions.InsertRange(insertionIndex, clonedConditions);
+            _conditions.InsertRange(insertIdx, clones);
 
             PopulateGridFromConditions();
-            BuildTriggerAndNotify();
-            StatusUpdateRequested?.Invoke(this, $"Duplicated {selectedRows.Count} line(s).");
 
+            // Select the new duplicates
             triggerGrid.ClearSelection();
-            for (int i = 0; i < clonedConditions.Count; i++)
+            foreach (DataGridViewRow row in triggerGrid.Rows)
             {
-                triggerGrid.Rows[insertionIndex + i].Selected = true;
+                if (row.Tag is AchievementCondition c && clones.Contains(c))
+                {
+                    row.Selected = true;
+                }
             }
+
+            BuildTriggerAndNotify();
+            StatusUpdateRequested?.Invoke(this, $"Duplicated {clones.Count} line(s).");
         }
         #endregion
     }
 }
-#nullable restore
