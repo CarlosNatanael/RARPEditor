@@ -233,9 +233,10 @@ namespace RARPEditor.Parsers
 
             foreach (var lookup in formatLookups)
             {
-                // Skip serialization if the formatter name is a built-in keyword.
+                // Skip serialization if the formatter name is a built-in macro name.
                 // These are reserved and handled natively by RA integration.
-                if (RichPresenceLookup.BuiltInFormatters.Contains(lookup.Name.ToUpper()))
+                // We check the Name (e.g. "Number") against the Keys of BuiltInMacros.
+                if (RichPresenceLookup.BuiltInMacros.ContainsKey(lookup.Name))
                 {
                     continue;
                 }

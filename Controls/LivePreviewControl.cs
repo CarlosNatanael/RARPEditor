@@ -206,13 +206,14 @@ namespace RARPEditor.Controls
                     }
                     else
                     {
-                        // Check if it matches a built-in formatter name directly
-                        if (RichPresenceLookup.BuiltInFormatters.Contains(part.Text.ToUpper()))
+                        // Check if it matches a built-in macro name directly
+                        if (RichPresenceLookup.BuiltInMacros.TryGetValue(part.Text, out string? formatType))
                         {
-                            sb.Append(FormatValue(_simulatedTimeValue, part.Text.ToUpper(), part.Parameter));
+                            sb.Append(FormatValue(_simulatedTimeValue, formatType, part.Parameter));
                         }
                         else
                         {
+                            // If unknown, fallback to VALUE (though validator would flag this)
                             sb.Append(FormatValue(_simulatedTimeValue, "VALUE", part.Parameter));
                         }
                     }
@@ -305,6 +306,8 @@ namespace RARPEditor.Controls
                 "FLOAT4" => ((float)_random.NextDouble() * 1000).ToString("F4"),
                 "FLOAT5" => ((float)_random.NextDouble() * 1000).ToString("F5"),
                 "FLOAT6" => ((float)_random.NextDouble() * 1000).ToString("F6"),
+                "ASCIICHAR" => value >= 0x20 && value <= 0x7E ? ((char)value).ToString() : "?",
+                "UNICODECHAR" => value >= 0x20 ? ((char)value).ToString() : "?",
                 "VALUE" or _ => displayValue.ToString(),
             };
         }

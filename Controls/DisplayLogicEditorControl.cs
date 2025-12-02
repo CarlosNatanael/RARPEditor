@@ -400,7 +400,7 @@ namespace RARPEditor.Controls
             }
 
             // Add Built-in Formatters submenu
-            if (RichPresenceLookup.BuiltInFormatters.Any())
+            if (RichPresenceLookup.BuiltInMacros.Any())
             {
                 if (lookups.Any() || formatters.Any())
                 {
@@ -408,9 +408,10 @@ namespace RARPEditor.Controls
                 }
 
                 var builtInMenu = new ToolStripMenuItem("Built-in Formatters");
-                foreach (var fmt in RichPresenceLookup.BuiltInFormatters)
+                // Use the BuiltInMacros Keys (e.g. Number, Score) for the menu
+                foreach (var macroName in RichPresenceLookup.BuiltInMacros.Keys)
                 {
-                    builtInMenu.DropDownItems.Add(new ToolStripMenuItem($"Insert {{{fmt}}}", null, InsertMacro_Click) { Tag = fmt });
+                    builtInMenu.DropDownItems.Add(new ToolStripMenuItem($"Insert {{{macroName}}}", null, InsertMacro_Click) { Tag = macroName });
                 }
                 macroContextMenu.Items.Add(builtInMenu);
             }

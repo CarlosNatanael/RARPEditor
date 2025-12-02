@@ -19,7 +19,8 @@ namespace RARPEditor.Models
 
     public class RichPresenceLookup
     {
-        public static readonly string[] BuiltInFormatters = {
+        // The raw FormatTypes supported by the RA Engine. Used in the Formatter Editor Dropdown.
+        public static readonly string[] FormatTypes = {
             "VALUE",
             "UNSIGNED",
             "SCORE",
@@ -39,9 +40,29 @@ namespace RARPEditor.Models
             "FLOAT3",
             "FLOAT4",
             "FLOAT5",
-            "FLOAT6",
-            "ASCIIChar",
-            "UnicodeChar"
+            "FLOAT6"
+        };
+
+        // The implicit Macros that map to specific FormatTypes. Used for Validation and Simulation.
+        public static readonly Dictionary<string, string> BuiltInMacros = new()
+        {
+            { "Number", "VALUE" },
+            { "Unsigned", "UNSIGNED" },
+            { "Score", "SCORE" },
+            { "Centiseconds", "MILLISECS" },
+            { "Seconds", "SECS" },
+            { "Minutes", "MINUTES" },
+            { "Fixed1", "FIXED1" },
+            { "Fixed2", "FIXED2" },
+            { "Fixed3", "FIXED3" },
+            { "Float1", "FLOAT1" },
+            { "Float2", "FLOAT2" },
+            { "Float3", "FLOAT3" },
+            { "Float4", "FLOAT4" },
+            { "Float5", "FLOAT5" },
+            { "Float6", "FLOAT6" },
+            { "ASCIIChar", "ASCIICHAR" },     // Special handling in simulation
+            { "UnicodeChar", "UNICODECHAR" }  // Special handling in simulation
         };
 
         [Category("General")]
@@ -174,6 +195,7 @@ namespace RARPEditor.Models
             {
                 if (part.IsMacro)
                 {
+                    // Check if it matches a defined Lookup/Formatter
                     var lookup = script.Lookups.FirstOrDefault(l => l.Name.Equals(part.Text, StringComparison.OrdinalIgnoreCase));
                     if (lookup != null)
                     {
@@ -188,14 +210,15 @@ namespace RARPEditor.Models
                     }
                     else
                     {
-                        // Check if it's a built-in formatter that doesn't have a Lookup definition
-                        if (RichPresenceLookup.BuiltInFormatters.Contains(part.Text.ToUpper()))
+                        // Check if it's a built-in macro (e.g. Number, Seconds)
+                        // If so, look up the corresponding format type to simulate the output
+                        if (RichPresenceLookup.BuiltInMacros.TryGetValue(part.Text, out string? formatType))
                         {
-                            sb.Append(FormatStaticValue(0, part.Text));
+                            sb.Append(FormatStaticValue(0, formatType));
                         }
                         else
                         {
-                            // Revert to using curly braces for display.
+                            // Not found: Revert to using curly braces for display.
                             sb.Append($"{{{part.Text}}}");
                         }
                     }

@@ -15,7 +15,8 @@ namespace RARPEditor.Controls
         public FormatterEditorControl()
         {
             InitializeComponent();
-            formatTypeComboBox.Items.AddRange(RichPresenceLookup.BuiltInFormatters);
+            // Use the list of raw Format Types (VALUE, SECS, etc.)
+            formatTypeComboBox.Items.AddRange(RichPresenceLookup.FormatTypes);
         }
 
         public void LoadFormatter(RichPresenceLookup formatter, RichPresenceScript script, Action dataChangedAction)
@@ -29,7 +30,7 @@ namespace RARPEditor.Controls
             // Store the name when the control is loaded.
             _originalName = _currentFormatter.Name;
 
-            int formatIndex = Array.IndexOf(RichPresenceLookup.BuiltInFormatters, _currentFormatter.Format.ToUpper());
+            int formatIndex = Array.IndexOf(RichPresenceLookup.FormatTypes, _currentFormatter.Format.ToUpper());
             formatTypeComboBox.SelectedIndex = formatIndex >= 0 ? formatIndex : 0;
 
             ValidateName();

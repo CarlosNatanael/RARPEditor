@@ -39,8 +39,8 @@ namespace RARPEditor.Logic
                 results.Add(new ValidationResult { Type = ValidationType.Error, Message = "Name should not be empty or contain spaces." });
             }
 
-            // Check if the name conflicts with a built-in formatter
-            if (RichPresenceLookup.BuiltInFormatters.Contains(lookup.Name.ToUpper()))
+            // Check if the name conflicts with a built-in macro name
+            if (RichPresenceLookup.BuiltInMacros.ContainsKey(lookup.Name))
             {
                 results.Add(new ValidationResult { Type = ValidationType.Warning, Message = $"'{lookup.Name}' is a built-in formatter name. Defining it manually is redundant." });
             }
@@ -174,8 +174,8 @@ namespace RARPEditor.Logic
 
             foreach (var part in displayString.Parts.Where(p => p.IsMacro))
             {
-                // Check if macro is a built-in formatter first
-                if (RichPresenceLookup.BuiltInFormatters.Contains(part.Text.ToUpper()))
+                // Check if macro is a built-in formatter first (using the Macro name like 'Number')
+                if (RichPresenceLookup.BuiltInMacros.ContainsKey(part.Text))
                 {
                     // Built-ins are always valid, check parameter presence
                     if (string.IsNullOrWhiteSpace(part.Parameter))
