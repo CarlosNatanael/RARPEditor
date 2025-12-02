@@ -39,6 +39,12 @@ namespace RARPEditor.Logic
                 results.Add(new ValidationResult { Type = ValidationType.Error, Message = "Name should not be empty or contain spaces." });
             }
 
+            // Check if the name conflicts with a built-in formatter
+            if (RichPresenceLookup.BuiltInFormatters.Contains(lookup.Name.ToUpper()))
+            {
+                results.Add(new ValidationResult { Type = ValidationType.Warning, Message = $"'{lookup.Name}' is a built-in formatter name. Defining it manually is redundant." });
+            }
+
             var caseCollisions = script.Lookups
                 .Where(l => l != lookup &&
                             l.Name.Equals(lookup.Name, System.StringComparison.OrdinalIgnoreCase) &&
@@ -168,6 +174,22 @@ namespace RARPEditor.Logic
 
             foreach (var part in displayString.Parts.Where(p => p.IsMacro))
             {
+                // Check if macro is a built-in formatter first
+                if (RichPresenceLookup.BuiltInFormatters.Contains(part.Text.ToUpper()))
+                {
+                    // Built-ins are always valid, check parameter presence
+                    if (string.IsNullOrWhiteSpace(part.Parameter))
+                    {
+                        results.Add(new ValidationResult { Type = ValidationType.Error, Message = $"Built-in formatter '{{{part.Text}}}' has no logic defined. Please select it in the dropdown and add logic." });
+                    }
+                    else
+                    {
+                        // Proceed to validate logic
+                        ValidateMacroLogic(part, results);
+                    }
+                    continue; // Skip lookup checks
+                }
+
                 bool exactMatchExists = script.Lookups.Any(l => l.Name.Equals(part.Text, System.StringComparison.Ordinal));
 
                 if (!exactMatchExists)
@@ -189,87 +211,92 @@ namespace RARPEditor.Logic
                 }
                 else
                 {
-                    var paramConditionGroups = AchievementParser.ParseAchievementTrigger(part.Parameter, '$');
-
-                    for (int i = 0; i < paramConditionGroups.Count; i++)
-                    {
-                        var group = paramConditionGroups[i];
-                        var paramConditions = group.Conditions;
-                        string groupIdentifier = $"Value Group {i + 1}";
-
-                        ValidateRedundantReads(paramConditions, results, $"macro '{{{part.Text}}}' ({groupIdentifier})");
-                        ValidateConditionValues(paramConditions, results, $"macro '{{{part.Text}}}' ({groupIdentifier})");
-                        ValidateMeasuredFlagRequirement(paramConditions, results, part, groupIdentifier);
-
-                        bool isChain = paramConditions.Any(c => ArithmeticFlags.Contains(c.Flag));
-
-                        var conditionalLines = paramConditions.Where(c => ComparisonOperators.Contains(c.Operator)).ToList();
-                        var valueProviderLines = paramConditions.Where(c => (c.Flag == "Measured" || c.Flag == "Measured%") && !ComparisonOperators.Contains(c.Operator)).ToList();
-
-                        foreach (var condition in paramConditions.Where(c => (c.Flag == "Measured" || c.Flag == "Measured%") && ComparisonOperators.Contains(c.Operator)))
-                        {
-                            results.Add(new ValidationResult { Type = ValidationType.Error, Message = $"In macro '{{{part.Text}}}' ({groupIdentifier}), 'Measured' (M:) on line {condition.ID} cannot be combined with a comparison operator." });
-                        }
-
-                        if (conditionalLines.Any() && !valueProviderLines.Any())
-                        {
-                            results.Add(new ValidationResult { Type = ValidationType.Error, Message = $"In macro '{{{part.Text}}}' ({groupIdentifier}), conditional logic exists but is missing a 'Measured' (M:) or 'Measured%' (G:) flag to specify the return value." });
-                        }
-
-                        if (valueProviderLines.Any())
-                        {
-                            foreach (var condition in paramConditions)
-                            {
-                                if (valueProviderLines.Contains(condition) || ArithmeticFlags.Contains(condition.Flag))
-                                    continue;
-
-                                if (!ComparisonOperators.Contains(condition.Operator))
-                                {
-                                    results.Add(new ValidationResult
-                                    {
-                                        Type = ValidationType.Error,
-                                        Message = $"In macro '{{{part.Text}}}' ({groupIdentifier}), line {condition.ID} is treated as a condition because a 'Measured' value exists. Therefore, it must have a comparison operator (e.g., '=', '!=', '<')."
-                                    });
-                                }
-                            }
-                        }
-
-                        if (isChain)
-                        {
-                            var lastCondition = paramConditions.LastOrDefault();
-                            if (lastCondition != null && lastCondition.Flag != "Measured" && lastCondition.Flag != "Measured%")
-                            {
-                                results.Add(new ValidationResult { Type = ValidationType.Error, Message = $"In macro '{{{part.Text}}}' ({groupIdentifier}), the arithmetic chain does not end with a 'Measured' (M:) or 'Measured%' (G:) flag." });
-                            }
-                        }
-
-                        foreach (var condition in paramConditions.Where(c => c.Flag == "Trigger"))
-                        {
-                            results.Add(new ValidationResult { Type = ValidationType.Warning, Message = $"In macro '{{{part.Text}}}' ({groupIdentifier}), the 'Trigger' (T:) flag on line {condition.ID} has no effect here." });
-                        }
-
-                        if (valueProviderLines.Count > 1)
-                        {
-                            results.Add(new ValidationResult { Type = ValidationType.Error, Message = $"In macro '{{{part.Text}}}' ({groupIdentifier}), there cannot be more than one 'Measured' (M: or G:) value." });
-                        }
-
-                        bool hasParameterErrors = results.Any(r => r.Type == ValidationType.Error && r.Message.Contains($"'{part.Text}'") && r.Message.Contains(groupIdentifier));
-                        if (!hasParameterErrors)
-                        {
-                            bool hasMeasured = valueProviderLines.Any(c => c.Flag == "Measured");
-                            bool hasMeasuredIf = conditionalLines.Any(c => c.Flag == "MeasuredIf");
-                            bool hasEmptyFlagCondition = paramConditions.Any(c => string.IsNullOrEmpty(c.Flag) && ComparisonOperators.Contains(c.Operator));
-
-                            if (hasMeasured && hasEmptyFlagCondition && !hasMeasuredIf)
-                            {
-                                results.Add(new ValidationResult { Type = ValidationType.Info, Message = $"For macro '{{{part.Text}}}' ({groupIdentifier}), consider using 'MeasuredIf' (Q:) for conditions to clarify intent." });
-                            }
-                        }
-                    }
+                    ValidateMacroLogic(part, results);
                 }
             }
 
             return results;
+        }
+
+        private static void ValidateMacroLogic(RichPresenceDisplayPart part, List<ValidationResult> results)
+        {
+            var paramConditionGroups = AchievementParser.ParseAchievementTrigger(part.Parameter, '$');
+
+            for (int i = 0; i < paramConditionGroups.Count; i++)
+            {
+                var group = paramConditionGroups[i];
+                var paramConditions = group.Conditions;
+                string groupIdentifier = $"Value Group {i + 1}";
+
+                ValidateRedundantReads(paramConditions, results, $"macro '{{{part.Text}}}' ({groupIdentifier})");
+                ValidateConditionValues(paramConditions, results, $"macro '{{{part.Text}}}' ({groupIdentifier})");
+                ValidateMeasuredFlagRequirement(paramConditions, results, part, groupIdentifier);
+
+                bool isChain = paramConditions.Any(c => ArithmeticFlags.Contains(c.Flag));
+
+                var conditionalLines = paramConditions.Where(c => ComparisonOperators.Contains(c.Operator)).ToList();
+                var valueProviderLines = paramConditions.Where(c => (c.Flag == "Measured" || c.Flag == "Measured%") && !ComparisonOperators.Contains(c.Operator)).ToList();
+
+                foreach (var condition in paramConditions.Where(c => (c.Flag == "Measured" || c.Flag == "Measured%") && ComparisonOperators.Contains(c.Operator)))
+                {
+                    results.Add(new ValidationResult { Type = ValidationType.Error, Message = $"In macro '{{{part.Text}}}' ({groupIdentifier}), 'Measured' (M:) on line {condition.ID} cannot be combined with a comparison operator." });
+                }
+
+                if (conditionalLines.Any() && !valueProviderLines.Any())
+                {
+                    results.Add(new ValidationResult { Type = ValidationType.Error, Message = $"In macro '{{{part.Text}}}' ({groupIdentifier}), conditional logic exists but is missing a 'Measured' (M:) or 'Measured%' (G:) flag to specify the return value." });
+                }
+
+                if (valueProviderLines.Any())
+                {
+                    foreach (var condition in paramConditions)
+                    {
+                        if (valueProviderLines.Contains(condition) || ArithmeticFlags.Contains(condition.Flag))
+                            continue;
+
+                        if (!ComparisonOperators.Contains(condition.Operator))
+                        {
+                            results.Add(new ValidationResult
+                            {
+                                Type = ValidationType.Error,
+                                Message = $"In macro '{{{part.Text}}}' ({groupIdentifier}), line {condition.ID} is treated as a condition because a 'Measured' value exists. Therefore, it must have a comparison operator (e.g., '=', '!=', '<')."
+                            });
+                        }
+                    }
+                }
+
+                if (isChain)
+                {
+                    var lastCondition = paramConditions.LastOrDefault();
+                    if (lastCondition != null && lastCondition.Flag != "Measured" && lastCondition.Flag != "Measured%")
+                    {
+                        results.Add(new ValidationResult { Type = ValidationType.Error, Message = $"In macro '{{{part.Text}}}' ({groupIdentifier}), the arithmetic chain does not end with a 'Measured' (M:) or 'Measured%' (G:) flag." });
+                    }
+                }
+
+                foreach (var condition in paramConditions.Where(c => c.Flag == "Trigger"))
+                {
+                    results.Add(new ValidationResult { Type = ValidationType.Warning, Message = $"In macro '{{{part.Text}}}' ({groupIdentifier}), the 'Trigger' (T:) flag on line {condition.ID} has no effect here." });
+                }
+
+                if (valueProviderLines.Count > 1)
+                {
+                    results.Add(new ValidationResult { Type = ValidationType.Error, Message = $"In macro '{{{part.Text}}}' ({groupIdentifier}), there cannot be more than one 'Measured' (M: or G:) value." });
+                }
+
+                bool hasParameterErrors = results.Any(r => r.Type == ValidationType.Error && r.Message.Contains($"'{part.Text}'") && r.Message.Contains(groupIdentifier));
+                if (!hasParameterErrors)
+                {
+                    bool hasMeasured = valueProviderLines.Any(c => c.Flag == "Measured");
+                    bool hasMeasuredIf = conditionalLines.Any(c => c.Flag == "MeasuredIf");
+                    bool hasEmptyFlagCondition = paramConditions.Any(c => string.IsNullOrEmpty(c.Flag) && ComparisonOperators.Contains(c.Operator));
+
+                    if (hasMeasured && hasEmptyFlagCondition && !hasMeasuredIf)
+                    {
+                        results.Add(new ValidationResult { Type = ValidationType.Info, Message = $"For macro '{{{part.Text}}}' ({groupIdentifier}), consider using 'MeasuredIf' (Q:) for conditions to clarify intent." });
+                    }
+                }
+            }
         }
 
         private static void ValidateConditionValues(List<AchievementCondition> conditions, List<ValidationResult> results, string context)

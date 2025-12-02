@@ -206,7 +206,15 @@ namespace RARPEditor.Controls
                     }
                     else
                     {
-                        sb.Append(FormatValue(_simulatedTimeValue, "VALUE", part.Parameter));
+                        // Check if it matches a built-in formatter name directly
+                        if (RichPresenceLookup.BuiltInFormatters.Contains(part.Text.ToUpper()))
+                        {
+                            sb.Append(FormatValue(_simulatedTimeValue, part.Text.ToUpper(), part.Parameter));
+                        }
+                        else
+                        {
+                            sb.Append(FormatValue(_simulatedTimeValue, "VALUE", part.Parameter));
+                        }
                     }
                 }
                 else

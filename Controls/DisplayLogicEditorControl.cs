@@ -398,6 +398,22 @@ namespace RARPEditor.Controls
                     macroContextMenu.Items.Add(item);
                 }
             }
+
+            // Add Built-in Formatters submenu
+            if (RichPresenceLookup.BuiltInFormatters.Any())
+            {
+                if (lookups.Any() || formatters.Any())
+                {
+                    macroContextMenu.Items.Add(new ToolStripSeparator());
+                }
+
+                var builtInMenu = new ToolStripMenuItem("Built-in Formatters");
+                foreach (var fmt in RichPresenceLookup.BuiltInFormatters)
+                {
+                    builtInMenu.DropDownItems.Add(new ToolStripMenuItem($"Insert {{{fmt}}}", null, InsertMacro_Click) { Tag = fmt });
+                }
+                macroContextMenu.Items.Add(builtInMenu);
+            }
         }
 
         private void InsertMacro_Click(object? sender, EventArgs e)
@@ -429,4 +445,3 @@ namespace RARPEditor.Controls
         }
     }
 }
-#nullable restore

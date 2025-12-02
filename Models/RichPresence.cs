@@ -1,6 +1,4 @@
-﻿#nullable enable
-
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -19,6 +17,29 @@ namespace RARPEditor.Models
 
     public class RichPresenceLookup
     {
+        public static readonly string[] BuiltInFormatters = {
+            "VALUE",
+            "UNSIGNED",
+            "SCORE",
+            "SECS",
+            "SECS_AS_MINS",
+            "MINUTES",
+            "FRAMES",
+            "MILLISECS",
+            "TENS",
+            "HUNDREDS",
+            "THOUSANDS",
+            "FIXED1",
+            "FIXED2",
+            "FIXED3",
+            "FLOAT1",
+            "FLOAT2",
+            "FLOAT3",
+            "FLOAT4",
+            "FLOAT5",
+            "FLOAT6"
+        };
+
         [Category("General")]
         [Description("The name of the lookup, used in macros.")]
         public string Name { get; set; } = "";
@@ -224,4 +245,3 @@ namespace RARPEditor.Models
         }
     }
 }
-#nullable disable

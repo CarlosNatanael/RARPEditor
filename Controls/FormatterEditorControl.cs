@@ -12,33 +12,10 @@ namespace RARPEditor.Controls
         // Store the original name to prevent creating undo states when no changes are made.
         private string _originalName = "";
 
-        private static readonly string[] FormatTypes = {
-            "VALUE",
-            "UNSIGNED",
-            "SCORE",
-            "SECS",
-            "SECS_AS_MINS",
-            "MINUTES",
-            "FRAMES",
-            "MILLISECS",
-            "TENS",
-            "HUNDREDS",
-            "THOUSANDS",
-            "FIXED1",
-            "FIXED2",
-            "FIXED3",
-            "FLOAT1",
-            "FLOAT2",
-            "FLOAT3",
-            "FLOAT4",
-            "FLOAT5",
-            "FLOAT6"
-        };
-
         public FormatterEditorControl()
         {
             InitializeComponent();
-            formatTypeComboBox.Items.AddRange(FormatTypes);
+            formatTypeComboBox.Items.AddRange(RichPresenceLookup.BuiltInFormatters);
         }
 
         public void LoadFormatter(RichPresenceLookup formatter, RichPresenceScript script, Action dataChangedAction)
@@ -52,7 +29,7 @@ namespace RARPEditor.Controls
             // Store the name when the control is loaded.
             _originalName = _currentFormatter.Name;
 
-            int formatIndex = Array.IndexOf(FormatTypes, _currentFormatter.Format.ToUpper());
+            int formatIndex = Array.IndexOf(RichPresenceLookup.BuiltInFormatters, _currentFormatter.Format.ToUpper());
             formatTypeComboBox.SelectedIndex = formatIndex >= 0 ? formatIndex : 0;
 
             ValidateName();
