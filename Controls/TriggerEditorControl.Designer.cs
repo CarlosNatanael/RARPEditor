@@ -255,16 +255,17 @@ namespace RARPEditor.Controls
             // copyLogicToolStripMenuItem
             // 
             this.copyLogicToolStripMenuItem.Name = "copyLogicToolStripMenuItem";
-            this.copyLogicToolStripMenuItem.ShortcutKeys = ((System.Windows.Forms.Keys)(((System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.Shift)
-            | System.Windows.Forms.Keys.C)));
+            this.copyLogicToolStripMenuItem.ShortcutKeys = ((System.Windows.Forms.Keys)((System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.C)));
             this.copyLogicToolStripMenuItem.Size = new System.Drawing.Size(221, 22);
             this.copyLogicToolStripMenuItem.Text = "Copy Logic";
             this.copyLogicToolStripMenuItem.Click += new System.EventHandler(this.copyLogicToolStripMenuItem_Click);
+
             // 
             // copyRowToolStripMenuItem
             // 
             this.copyRowToolStripMenuItem.Name = "copyRowToolStripMenuItem";
-            this.copyRowToolStripMenuItem.ShortcutKeys = ((System.Windows.Forms.Keys)((System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.C)));
+            this.copyRowToolStripMenuItem.ShortcutKeys = ((System.Windows.Forms.Keys)(((System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.Shift)
+            | System.Windows.Forms.Keys.C)));
             this.copyRowToolStripMenuItem.Size = new System.Drawing.Size(221, 22);
             this.copyRowToolStripMenuItem.Text = "Copy Row";
             this.copyRowToolStripMenuItem.Click += new System.EventHandler(this.copyRowToolStripMenuItem_Click);

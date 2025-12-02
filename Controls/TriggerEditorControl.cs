@@ -897,7 +897,6 @@ namespace RARPEditor.Controls
             }
         }
 
-        // ... [Context Menu Opening, Copy/Paste Logic, Move/Delete/Duplicate - Unchanged] ...
         private void contextMenuStrip_Opening(object sender, CancelEventArgs e)
         {
             bool anySelected = triggerGrid.SelectedRows.Count > 0;
